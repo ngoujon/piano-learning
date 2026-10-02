@@ -1,0 +1,348 @@
+import PianoCore
+import SwiftUI
+
+/// The lesson screen: shows the next note(s), listens through the microphone and
+/// moves on as soon as the right key is played.
+struct PracticeView: View {
+    @StateObject private var session: PracticeSession
+    @ObservedObject private var mic = MicrophoneListener.shared
+    @ObservedObject private var midi = MIDIInputService.shared
+    @EnvironmentObject private var library: LibraryStore
+    @AppStorage("showNoteNames") private var showNoteNames = true
+    @AppStorage("micSensitivity") private var micSensitivity = 1.0
+    @AppStorage("ignoreOctave") private var ignoreOctave = false
+    @AppStorage("showPDFInPractice") private var showPDF = true
+    let pdfURL: URL?
+    let onClose: () -> Void
+
+    @State private var loopStart: Int?
+
+    init(piece: Piece, score: Score, pdfURL: URL?, onFinish: @escaping (Double, Double?, Int?) -> Void, onClose: @escaping () -> Void) {
+        _session = StateObject(wrappedValue: PracticeSession(piece: piece, score: score, startStep: piece.resumeStep, onFinish: onFinish))
+        self.pdfURL = pdfURL
+        self.onClose = onClose
+    }
+
+    private var keyboardRange: ClosedRange<Int> {
+        KeyboardView.range(for: session.steps.flatMap(\.pitches) + session.detectedNotes.filter { (21...108).contains($0) })
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            topBar
+            Divider()
+            HSplitView {
+                if showPDF, let pdfURL {
+                    PDFKitView(url: pdfURL).frame(minWidth: 280, idealWidth: 420)
+                }
+                lessonPanel.frame(minWidth: 520)
+            }
+            Divider()
+            controls
+            keyboard
+        }
+        .onAppear {
+            session.sensitivity = micSensitivity
+            session.ignoreOctave = ignoreOctave
+            session.startListening()
+        }
+        .onDisappear {
+            session.saveProgress()
+            session.stopListening()
+            SoundEngine.shared.stop()
+        }
+        .onChange(of: micSensitivity) { _, v in session.sensitivity = v }
+        .onChange(of: ignoreOctave) { _, v in session.ignoreOctave = v }
+        .overlay { if session.finished { finishedOverlay } }
+    }
+
+    // MARK: - Top bar
+
+    private var topBar: some View {
+        HStack(spacing: 14) {
+            Button(action: onClose) { Label("Terminer", systemImage: "chevron.left") }
+                .keyboardShortcut(.cancelAction)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(session.piece.title).font(.headline).lineLimit(1)
+                if !session.piece.composer.isEmpty {
+                    Text(session.piece.composer).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            Picker("Mains", selection: $session.options.hands) {
+                ForEach(HandSelection.allCases) { Text($0.label).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 290)
+            .labelsHidden()
+            Toggle("Mélodie seule", isOn: $session.options.melodyOnly)
+                .help("Ne garder que la note principale de chaque accord (recommandé pour débuter et pour la détection au micro)")
+            Menu {
+                Toggle("Accepter n'importe quelle octave", isOn: $ignoreOctave)
+                Toggle("Jouer automatiquement chaque nouvelle note", isOn: $session.autoPlayTarget)
+                Toggle("Afficher le nom des notes", isOn: $showNoteNames)
+                if pdfURL != nil { Toggle("Afficher la partition PDF", isOn: $showPDF) }
+                Divider()
+                Text("Sensibilité du micro")
+                Picker("Sensibilité", selection: $micSensitivity) {
+                    Text("Très sensible (pièce calme)").tag(0.6)
+                    Text("Normale").tag(1.0)
+                    Text("Peu sensible (pièce bruyante)").tag(1.8)
+                }
+                .pickerStyle(.inline)
+            } label: {
+                Label("Options", systemImage: "slider.horizontal.3")
+            }
+            .fixedSize()
+            micIndicator
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+    }
+
+    private var micIndicator: some View {
+        HStack(spacing: 6) {
+            switch mic.state {
+            case .running:
+                Image(systemName: mic.isSuppressed ? "speaker.wave.2.fill" : "mic.fill")
+                    .foregroundStyle(mic.isSuppressed ? Color.secondary : Color.green)
+                    .help(mic.isSuppressed ? "Micro en pause pendant que l'application joue" : "Micro actif : \(mic.deviceName)")
+                LevelMeter(level: mic.level).frame(width: 50, height: 8)
+            case .denied:
+                Button {
+                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!)
+                } label: {
+                    Label("Autoriser le micro", systemImage: "mic.slash.fill")
+                }
+                .foregroundStyle(.red)
+            case .failed(let e):
+                Label(e, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange).font(.caption)
+            default:
+                ProgressView().controlSize(.small)
+            }
+            if !midi.sources.isEmpty {
+                Image(systemName: "pianokeys").foregroundStyle(.blue).help("Clavier MIDI : \(midi.sources.joined(separator: ", "))")
+            }
+        }
+    }
+
+    // MARK: - Lesson panel
+
+    private var lessonPanel: some View {
+        VStack(spacing: 16) {
+            targetCard
+            StaffView(columns: staffColumns, showNames: showNoteNames, wrongNote: wrongNote)
+                .frame(minHeight: 220, maxHeight: 320)
+                .padding(.horizontal)
+            heardLabel
+            Spacer(minLength: 0)
+        }
+        .padding(.top, 16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var wrongNote: Int? {
+        if case .wrong(let n) = session.feedback { return n }
+        return nil
+    }
+
+    private var targetCard: some View {
+        let step = session.currentStep
+        let bg: Color = {
+            switch session.feedback {
+            case .correct: return .green.opacity(0.25)
+            case .wrong: return .red.opacity(0.22)
+            case .none: return Color.accentColor.opacity(0.08)
+            }
+        }()
+        return VStack(spacing: 6) {
+            Text(session.steps.isEmpty ? "Aucune note pour cette main" : "Jouez")
+                .font(.caption).foregroundStyle(.secondary).textCase(.uppercase)
+            if let step {
+                HStack(spacing: 18) {
+                    ForEach(step.pitches.reversed(), id: \.self) { p in
+                        VStack(spacing: 2) {
+                            Text(showNoteNames ? p.noteLabel : "?")
+                                .font(.system(size: step.pitches.count > 2 ? 34 : 48, weight: .bold, design: .rounded))
+                                .foregroundStyle(step.hands[p] == .left ? Color.green : Color.accentColor)
+                            Text(step.hands[p] == .left ? "main gauche" : "main droite")
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+            switch session.feedback {
+            case .wrong(let n):
+                Text("Ce n'est pas la bonne touche (\(n.noteLabel)) — réessayez").font(.callout.bold()).foregroundStyle(.red)
+            case .correct:
+                Text("Bravo !").font(.callout.bold()).foregroundStyle(.green)
+            case .none:
+                Text(session.isListening ? "Le micro écoute… jouez la note sur votre piano" : " ")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 14)
+        .background(RoundedRectangle(cornerRadius: 16).fill(bg))
+        .animation(.easeOut(duration: 0.15), value: session.feedback)
+        .padding(.horizontal)
+    }
+
+    private var heardLabel: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "ear").foregroundStyle(.secondary)
+            Text("Entendu :").foregroundStyle(.secondary)
+            Text(session.detectedLabel ?? "—").font(.title3.monospaced().bold())
+            if let c = session.cents {
+                TunerNeedle(cents: c).frame(width: 90, height: 10)
+            }
+            Spacer()
+            Text("Note \(min(session.index + 1, session.steps.count)) / \(session.steps.count)").monospacedDigit()
+            if let a = session.accuracy {
+                Text("Précision \(Int(a * 100)) %").monospacedDigit().foregroundStyle(a > 0.8 ? .green : .orange)
+            }
+        }
+        .font(.callout)
+        .padding(.horizontal)
+    }
+
+    private var staffColumns: [StaffView.Column] {
+        let prev = session.previous(2).map { StaffView.Column(id: $0.id, pitches: $0.pitches, hands: $0.hands, state: .done) }
+        let next = session.upcoming(8).enumerated().map { i, s in
+            StaffView.Column(id: s.id, pitches: s.pitches, hands: s.hands, state: i == 0 ? .current : .upcoming)
+        }
+        return prev + next
+    }
+
+    // MARK: - Controls
+
+    private var controls: some View {
+        HStack(spacing: 10) {
+            Button { session.back() } label: { Image(systemName: "backward.fill") }
+                .keyboardShortcut(.leftArrow, modifiers: [])
+                .help("Note précédente (←)")
+            Button { session.playTarget() } label: { Label("Écouter la note", systemImage: "speaker.wave.2.fill") }
+                .keyboardShortcut(.space, modifiers: [])
+                .help("Faire entendre la note à jouer (espace). Le micro est mis en pause pendant ce temps.")
+            Button { session.skip() } label: { Image(systemName: "forward.fill") }
+                .keyboardShortcut(.rightArrow, modifiers: [])
+                .help("Passer cette note (→)")
+            Button { session.restart() } label: { Label("Recommencer", systemImage: "arrow.counterclockwise") }
+
+            Slider(value: Binding(get: { Double(session.index) },
+                                  set: { session.jump(to: Int($0)) }),
+                   in: 0...Double(max(session.steps.count - 1, 1)))
+                .frame(minWidth: 160)
+
+            if let loop = session.loopRange {
+                Button { session.loopRange = nil; loopStart = nil } label: {
+                    Label("Boucle \(loop.lowerBound + 1)–\(loop.upperBound + 1) ✕", systemImage: "repeat")
+                }
+                .tint(.purple)
+            } else if let start = loopStart {
+                Button {
+                    let end = max(start, session.index)
+                    session.loopRange = min(start, session.index)...end
+                    loopStart = nil
+                    session.jump(to: min(start, end))
+                } label: { Label("Fin de boucle ici", systemImage: "repeat") }
+                .help("Répéter le passage entre le début de boucle et la note actuelle")
+            } else {
+                Button { loopStart = session.index } label: { Label("Début de boucle", systemImage: "repeat") }
+                    .help("Travailler un passage difficile en boucle")
+            }
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+    }
+
+    private var keyboard: some View {
+        var highlights: [Int: Color] = [:]
+        var labels: [Int: String] = [:]
+        if let step = session.currentStep {
+            for p in step.pitches {
+                highlights[p] = (step.hands[p] == .left ? Color.green : Color.accentColor).opacity(0.75)
+                if showNoteNames { labels[p] = p.noteLabel }
+            }
+        }
+        for d in session.detectedNotes where highlights[d] == nil {
+            highlights[d] = .orange.opacity(0.7)
+        }
+        switch session.feedback {
+        case .wrong(let n): highlights[n] = .red.opacity(0.8)
+        case .correct: break
+        case .none: break
+        }
+        return KeyboardView(range: keyboardRange, highlights: highlights, labels: labels) { pitch in
+            session.keyPressed(pitch)
+        }
+        .frame(height: 150)
+        .padding(.horizontal, 6)
+        .padding(.bottom, 6)
+    }
+
+    // MARK: - Finished
+
+    private var finishedOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.35).ignoresSafeArea()
+            VStack(spacing: 14) {
+                Text("🎉").font(.system(size: 64))
+                Text("Morceau terminé !").font(.largeTitle.bold())
+                if let a = session.accuracy {
+                    Text("Précision : \(Int(a * 100)) %").font(.title2)
+                    let stars = a >= 0.95 ? 3 : (a >= 0.8 ? 2 : 1)
+                    HStack {
+                        ForEach(0..<3) { i in
+                            Image(systemName: i < stars ? "star.fill" : "star")
+                                .foregroundStyle(.yellow).font(.title)
+                        }
+                    }
+                }
+                Text("\(session.correctCount) notes justes · \(session.wrongCount) erreurs · \(formatDuration(session.elapsed))")
+                    .foregroundStyle(.secondary)
+                HStack {
+                    Button("Recommencer") { session.restart() }.keyboardShortcut(.defaultAction)
+                    if session.options.hands != .both {
+                        Button("Essayer à deux mains") { session.options.hands = .both; session.restart() }
+                    }
+                    Button("Retour à la collection", action: onClose)
+                }
+                .controlSize(.large)
+            }
+            .padding(40)
+            .background(RoundedRectangle(cornerRadius: 24).fill(.regularMaterial))
+        }
+    }
+}
+
+struct LevelMeter: View {
+    let level: Float
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.secondary.opacity(0.2))
+                Capsule().fill(level > 0.8 ? Color.red : Color.green)
+                    .frame(width: geo.size.width * CGFloat(min(1, max(0, level))))
+            }
+        }
+    }
+}
+
+/// Small tuning indicator (cents off the nearest note).
+struct TunerNeedle: View {
+    let cents: Double
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                Capsule().fill(Color.secondary.opacity(0.2))
+                Rectangle().fill(Color.secondary).frame(width: 1)
+                Circle()
+                    .fill(abs(cents) < 15 ? Color.green : Color.orange)
+                    .frame(width: 8, height: 8)
+                    .offset(x: CGFloat(max(-50, min(50, cents)) / 50) * geo.size.width / 2)
+            }
+        }
+        .help(String(format: "%+.0f cents", cents))
+    }
+}

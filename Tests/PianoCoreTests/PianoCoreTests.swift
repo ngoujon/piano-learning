@@ -164,11 +164,15 @@ private func pianoTone(midi notes: [Int], sampleRate: Double = 48_000, count: In
         for _ in 0..<3 { verdicts.append(m.process(tone)) }
         #expect(verdicts.contains(.correct))
 
-        // Wrong note gets reported.
+        // Wrong note gets reported (but not the previous step's note, which may still ring).
         m.reset(expected: [72])
         _ = m.process(silence)
-        let wrong = (0..<4).map { _ in m.process(tone) }
-        #expect(wrong.contains(.wrong(69)))
+        #expect(!(0..<4).map { _ in m.process(tone) }.contains(.wrong(69)))
+        m.reset(expected: [74])
+        _ = m.process(silence)
+        let other = analyzer.analyze(pianoTone(midi: [65]))
+        let wrong = (0..<4).map { _ in m.process(other) }
+        #expect(wrong.contains(.wrong(65)))
         #expect(!wrong.contains(.correct))
     }
 
@@ -178,5 +182,41 @@ private func pianoTone(midi notes: [Int], sampleRate: Double = 48_000, count: In
         var m = NoteMatcher()
         m.reset(expected: [60])
         #expect(m.process(frame) == .silence)
+    }
+}
+
+@Suite struct OMRMusicXMLTests {
+    /// `clair-omr.mxl` was produced by Audiveris from the site's PDF: its melody must match the site's MIDI.
+    @Test func compressedMusicXMLFromOMRMatchesMIDI() throws {
+        let omr = try MusicXMLParser.parse(url: try fixture("clair-omr.mxl"))
+        let midi = try MIDIFileParser.parse(url: try fixture("clair.mid"))
+        let opts = PracticeOptions(hands: .right, melodyOnly: true)
+        let a = PracticeSequence.build(score: omr, options: opts).map { $0.pitches[0] }
+        let b = PracticeSequence.build(score: midi, options: opts).map { $0.pitches[0] }
+        print("OMR :", a.prefix(24).map { NoteName.french($0) }.joined(separator: " "))
+        print("MIDI:", b.prefix(24).map { NoteName.french($0) }.joined(separator: " "))
+        #expect(Array(a.prefix(11)) == Array(b.prefix(11)))
+    }
+}
+
+@Suite struct MIDIWriterTests {
+    @Test func roundTrip() throws {
+        let original = try MIDIFileParser.parse(url: try fixture("elise.mid"))
+        let reparsed = try MIDIFileParser.parse(data: MIDIFileWriter.data(for: original))
+        #expect(reparsed.notes.count == original.notes.count)
+        for (a, b) in zip(original.notes, reparsed.notes).prefix(200) {
+            #expect(a.pitch == b.pitch)
+            #expect(abs(a.start - b.start) < 0.002)
+        }
+        let opts = PracticeOptions(hands: .right, melodyOnly: true)
+        #expect(PracticeSequence.build(score: original, options: opts).map(\.pitches)
+                == PracticeSequence.build(score: reparsed, options: opts).map(\.pitches))
+    }
+
+    @Test func concatenatePages() throws {
+        let page = try MusicXMLParser.parse(url: try fixture("clair-omr.mxl"))
+        let both = MIDIFileWriter.concatenate([page, page])
+        #expect(both.notes.count == page.notes.count * 2)
+        #expect(both.duration > page.duration * 2)
     }
 }

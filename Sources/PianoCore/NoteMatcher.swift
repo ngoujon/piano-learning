@@ -25,11 +25,14 @@ public struct NoteMatcher {
     private var wrongCandidate: Int?
     private var wrongFrames = 0
     private var wrongReported = false
+    /// Notes of the previous step: their decaying sound must not count as a wrong note.
+    private var previousExpected: Set<Int> = []
 
     public init() {}
 
     /// Call when moving to a new step.
     public mutating func reset(expected: Set<Int>, requireOnset: Bool = true) {
+        previousExpected = self.expected
         self.expected = expected
         hits = 0
         onsetSeen = !requireOnset
@@ -96,7 +99,7 @@ public struct NoteMatcher {
 
         // Wrong-note detection (needs a confident monophonic estimate held for a few frames).
         if let m = frame.midiPitch, frame.pitchConfidence > 0.85, NoteName.pianoRange.contains(m),
-           !expected.contains(where: { same($0, m) }) {
+           !expected.contains(where: { same($0, m) }), !previousExpected.contains(m) {
             if wrongCandidate == m { wrongFrames += 1 } else { wrongCandidate = m; wrongFrames = 1 }
             if wrongFrames >= 3 && !wrongReported {
                 wrongReported = true
