@@ -27,6 +27,7 @@ struct FreePlayView: View {
                 }
                 .frame(maxWidth: 360)
                 Spacer()
+                InputDevicePicker().frame(maxWidth: 280)
                 switch mic.state {
                 case .running:
                     Label(mic.deviceName, systemImage: "mic.fill").foregroundStyle(.green)

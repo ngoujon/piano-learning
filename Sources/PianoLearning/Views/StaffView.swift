@@ -69,6 +69,7 @@ struct StaffView: View {
                 for pitch in col.pitches {
                     let (d, sharp) = Self.diatonic(pitch)
                     let onTreble = (col.hands[pitch] ?? (pitch >= 60 ? .right : .left)) == .right
+                    let color = col.state == .current && !onTreble ? Color.green : color
                     drawLedgers(ctx: ctx, d: d, x: x, space: space, onTreble: onTreble, y: y)
                     let center = CGPoint(x: x, y: y(d))
                     let head = Path(ellipseIn: CGRect(x: center.x - space * 0.65, y: center.y - space * 0.45, width: space * 1.3, height: space * 0.9))
@@ -78,8 +79,8 @@ struct StaffView: View {
                                  at: CGPoint(x: x - space * 1.5, y: center.y))
                     }
                     if showNames, col.state == .current {
-                        ctx.draw(Text(pitch.noteLabel).font(.system(size: max(10, space * 0.95), weight: .bold)).foregroundColor(.accentColor),
-                                 at: CGPoint(x: x + space * 2.0, y: center.y))
+                        ctx.draw(Text(pitch.noteLabel).font(.system(size: max(10, space * 0.95), weight: .bold)).foregroundColor(color),
+                                 at: CGPoint(x: x, y: onTreble ? y(max(d, 40)) - space * 1.6 : y(min(d, 16)) + space * 1.6))
                     }
                 }
                 if col.state == .current, let w = wrongNote {

@@ -83,6 +83,7 @@ struct PracticeView: View {
                 Toggle("Afficher le nom des notes", isOn: $showNoteNames)
                 if pdfURL != nil { Toggle("Afficher la partition PDF", isOn: $showPDF) }
                 Divider()
+                InputDevicePicker()
                 Text("Sensibilité du micro")
                 Picker("Sensibilité", selection: $micSensitivity) {
                     Text("Très sensible (pièce calme)").tag(0.6)

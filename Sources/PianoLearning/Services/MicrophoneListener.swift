@@ -42,6 +42,10 @@ final class MicrophoneListener: ObservableObject {
     func start() {
         clients += 1
         guard state != .running, state != .requesting else { return }
+        if ProcessInfo.processInfo.environment["PIANO_TEST_AUDIO"] != nil {
+            startEngine() // test file input: no microphone permission needed
+            return
+        }
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
         case .authorized:
             startEngine()
@@ -60,28 +64,78 @@ final class MicrophoneListener: ObservableObject {
     func stop() {
         clients = max(0, clients - 1)
         guard clients == 0 else { return }
-        engine.inputNode.removeTap(onBus: 0)
+        tappedNode?.removeTap(onBus: 0)
+        tappedNode = nil
+        testPlayer?.stop()
+        testPlayer = nil
         engine.stop()
         state = .idle
         level = 0
         lastFrame = nil
     }
 
+    /// Restarts capture (e.g. after choosing another input device).
+    func restart() {
+        guard state == .running else { return }
+        tappedNode?.removeTap(onBus: 0)
+        engine.stop()
+        startEngine()
+    }
+
+    private let debugLog = ProcessInfo.processInfo.environment["PIANO_DEBUG"] != nil
+    private var tappedNode: AVAudioNode?
+    private var testPlayer: AVAudioPlayerNode?
+
     private func startEngine() {
         engine = AVAudioEngine()
+        let analyzerFor: (Double) -> TapProcessor = { [weak self, queue] rate in
+            TapProcessor(analyzer: PitchAnalyzer(sampleRate: rate), queue: queue) { frame in
+                Task { @MainActor in self?.deliver(frame) }
+            }
+        }
+
+        // Test hook: PIANO_TEST_AUDIO=/path/file.wav replaces the microphone with an audio file
+        // (played silently through the same analysis pipeline), to check lessons without a piano.
+        if let path = ProcessInfo.processInfo.environment["PIANO_TEST_AUDIO"],
+           let file = try? AVAudioFile(forReading: URL(fileURLWithPath: path)) {
+            let player = AVAudioPlayerNode()
+            engine.attach(player)
+            engine.connect(player, to: engine.mainMixerNode, format: file.processingFormat)
+            engine.mainMixerNode.outputVolume = 0
+            let processor = analyzerFor(file.processingFormat.sampleRate)
+            self.processor = processor
+            player.installTap(onBus: 0, bufferSize: 1024, format: file.processingFormat, block: processor.makeBlock())
+            tappedNode = player
+            testPlayer = player
+            deviceName = "Fichier de test"
+            do {
+                try engine.start()
+                player.scheduleFile(file, at: nil)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { player.play() }
+                state = .running
+            } catch {
+                state = .failed(error.localizedDescription)
+            }
+            return
+        }
+
         let input = engine.inputNode
+        if let uid = UserDefaults.standard.string(forKey: "inputDeviceUID"), !uid.isEmpty,
+           let device = AudioInputDevices.all().first(where: { $0.uid == uid }) {
+            AudioInputDevices.select(device.id, on: input)
+            deviceName = device.name
+        } else {
+            deviceName = AudioInputDevices.all().first(where: { $0.isDefault })?.name ?? "Micro"
+        }
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else {
             state = .failed("Aucun micro détecté.")
             return
         }
-        deviceName = AVCaptureDevice.default(for: .audio)?.localizedName ?? "Micro"
-        let analyzer = PitchAnalyzer(sampleRate: format.sampleRate)
-        let processor = TapProcessor(analyzer: analyzer, queue: queue) { [weak self] frame in
-            Task { @MainActor in self?.deliver(frame) }
-        }
+        let processor = analyzerFor(format.sampleRate)
         self.processor = processor
         input.installTap(onBus: 0, bufferSize: 1024, format: format, block: processor.makeBlock())
+        tappedNode = input
 
         do {
             engine.prepare()
@@ -93,6 +147,7 @@ final class MicrophoneListener: ObservableObject {
     }
 
     private func deliver(_ frame: AnalysisFrame) {
+        if debugLog { FileHandle.standardError.write("frame rms=\(frame.rms) pitch=\(frame.midiPitch ?? -1) conf=\(frame.pitchConfidence) suppressed=\(isSuppressed)\n".data(using: .utf8)!) }
         level = level * 0.6 + min(1, frame.rms * 8) * 0.4
         guard !isSuppressed else {
             lastFrame = nil

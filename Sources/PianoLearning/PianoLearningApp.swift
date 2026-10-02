@@ -166,6 +166,7 @@ struct SettingsView: View {
                 Text("Do, Ré, Mi…").tag("fr")
                 Text("C, D, E…").tag("en")
             }
+            InputDevicePicker()
             Toggle("Afficher le nom des notes pendant l'apprentissage", isOn: $showNoteNames)
             Toggle("Accepter la bonne note dans n'importe quelle octave", isOn: $ignoreOctave)
             VStack(alignment: .leading) {
