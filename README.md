@@ -24,6 +24,7 @@ Nécessite macOS 14+ et les Command Line Tools (Xcode non obligatoire).
 scripts/build_app.sh            # crée build/Piano Learning.app
 open "build/Piano Learning.app"
 scripts/build_app.sh --install  # copie aussi l'app dans /Applications
+scripts/package.sh              # zip universel (Apple Silicon + Intel) sur le Bureau, pour un autre Mac
 scripts/test.sh                 # tests (parseurs, détection de hauteur, tests audio de bout en bout)
 ```
 
