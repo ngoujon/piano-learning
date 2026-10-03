@@ -101,7 +101,8 @@ final class MicrophoneListener: ObservableObject {
             let player = AVAudioPlayerNode()
             engine.attach(player)
             engine.connect(player, to: engine.mainMixerNode, format: file.processingFormat)
-            engine.mainMixerNode.outputVolume = 0
+            // PIANO_TEST_AUDIBLE=1 lets you hear the injected file (demos).
+            engine.mainMixerNode.outputVolume = ProcessInfo.processInfo.environment["PIANO_TEST_AUDIBLE"] != nil ? 1 : 0
             let processor = analyzerFor(file.processingFormat.sampleRate)
             self.processor = processor
             player.installTap(onBus: 0, bufferSize: 1024, format: file.processingFormat, block: processor.makeBlock())
