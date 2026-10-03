@@ -159,6 +159,7 @@ struct SettingsView: View {
     @AppStorage("micSensitivity") private var micSensitivity = 1.0
     @AppStorage("ignoreOctave") private var ignoreOctave = false
     @AppStorage("showNoteNames") private var showNoteNames = true
+    @AppStorage("pianoOnly") private var pianoOnly = true
 
     var body: some View {
         Form {
@@ -169,6 +170,11 @@ struct SettingsView: View {
             InputDevicePicker()
             Toggle("Afficher le nom des notes pendant l'apprentissage", isOn: $showNoteNames)
             Toggle("Accepter la bonne note dans n'importe quelle octave", isOn: $ignoreOctave)
+            VStack(alignment: .leading) {
+                Toggle("Ignorer la voix et les bruits (réagir seulement aux notes de piano)", isOn: $pianoOnly)
+                Text("Désactivez-le si certaines notes de votre piano ne sont pas reconnues.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             VStack(alignment: .leading) {
                 Text("Seuil du micro : \(micSensitivity, specifier: "%.1f")")
                 Slider(value: $micSensitivity, in: 0.4...2.5) {

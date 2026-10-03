@@ -11,6 +11,7 @@ struct PracticeView: View {
     @AppStorage("showNoteNames") private var showNoteNames = true
     @AppStorage("micSensitivity") private var micSensitivity = 1.0
     @AppStorage("ignoreOctave") private var ignoreOctave = false
+    @AppStorage("pianoOnly") private var pianoOnly = true
     @AppStorage("showPDFInPractice") private var showPDF = true
     let pdfURL: URL?
     let onClose: () -> Void
@@ -21,10 +22,6 @@ struct PracticeView: View {
         _session = StateObject(wrappedValue: PracticeSession(piece: piece, score: score, startStep: piece.resumeStep, onFinish: onFinish))
         self.pdfURL = pdfURL
         self.onClose = onClose
-    }
-
-    private var keyboardRange: ClosedRange<Int> {
-        KeyboardView.range(for: session.steps.flatMap(\.pitches) + session.detectedNotes.filter { (21...108).contains($0) })
     }
 
     var body: some View {
@@ -44,6 +41,7 @@ struct PracticeView: View {
         .onAppear {
             session.sensitivity = micSensitivity
             session.ignoreOctave = ignoreOctave
+            session.pianoOnly = pianoOnly
             session.startListening()
         }
         .onDisappear {
@@ -53,6 +51,7 @@ struct PracticeView: View {
         }
         .onChange(of: micSensitivity) { _, v in session.sensitivity = v }
         .onChange(of: ignoreOctave) { _, v in session.ignoreOctave = v }
+        .onChange(of: pianoOnly) { _, v in session.pianoOnly = v }
         .overlay { if session.finished { finishedOverlay } }
     }
 
@@ -79,6 +78,7 @@ struct PracticeView: View {
                 .help("Ne garder que la note principale de chaque accord (recommandé pour débuter et pour la détection au micro)")
             Menu {
                 Toggle("Accepter n'importe quelle octave", isOn: $ignoreOctave)
+                Toggle("Ignorer la voix et les bruits", isOn: $pianoOnly)
                 Toggle("Jouer automatiquement chaque nouvelle note", isOn: $session.autoPlayTarget)
                 Toggle("Afficher le nom des notes", isOn: $showNoteNames)
                 if pdfURL != nil { Toggle("Afficher la partition PDF", isOn: $showPDF) }
@@ -274,7 +274,8 @@ struct PracticeView: View {
         case .correct: break
         case .none: break
         }
-        return KeyboardView(range: keyboardRange, highlights: highlights, labels: labels) { pitch in
+        // Always the full 88 keys, like a real piano, so the keyboard never shifts under the notes.
+        return KeyboardView(highlights: highlights, labels: labels) { pitch in
             session.keyPressed(pitch)
         }
         .frame(height: 150)

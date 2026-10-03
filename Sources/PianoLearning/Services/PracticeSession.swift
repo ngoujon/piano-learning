@@ -24,6 +24,10 @@ final class PracticeSession: ObservableObject {
     @Published var sensitivity: Double = 1.0 {
         didSet { matcher.sensitivity = Float(sensitivity) }
     }
+    /// Only react to piano notes, not to voice or room noise.
+    @Published var pianoOnly = true {
+        didSet { matcher.pianoOnly = pianoOnly }
+    }
     /// Plays each new target note automatically (helps beginners find it by ear).
     @Published var autoPlayTarget = false
 
@@ -156,6 +160,7 @@ final class PracticeSession: ObservableObject {
     private func prepareStep(requireOnset: Bool = true) {
         matcher.ignoreOctave = ignoreOctave
         matcher.sensitivity = Float(sensitivity)
+        matcher.pianoOnly = pianoOnly
         matcher.reset(expected: Set(currentStep?.pitches ?? []), requireOnset: requireOnset)
         heldVirtual.removeAll()
         if autoPlayTarget, currentStep != nil {
@@ -197,8 +202,9 @@ final class PracticeSession: ObservableObject {
     // MARK: - Input handling
 
     private func handle(_ frame: AnalysisFrame) {
-        // Display what the microphone hears.
-        if frame.rms > matcher.gate {
+        let verdict = matcher.process(frame)
+        // Display what the microphone hears (piano notes only, not voices or noise).
+        if verdict != .silence, matcher.isPianoTone {
             if let m = frame.midiPitch, frame.pitchConfidence > 0.7, NoteName.pianoRange.contains(m) {
                 detectedNotes = [m]
                 detectedLabel = m.noteLabel
@@ -216,7 +222,7 @@ final class PracticeSession: ObservableObject {
         }
 
         guard !finished, currentStep != nil else { return }
-        switch matcher.process(frame) {
+        switch verdict {
         case .correct:
             advance(countAsCorrect: true)
         case .wrong(let n):

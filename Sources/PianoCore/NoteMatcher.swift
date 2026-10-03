@@ -17,6 +17,12 @@ public struct NoteMatcher {
     public var requiredFrames = 2
     /// Multiplier applied to the noise floor to open the gate (higher = less sensitive).
     public var sensitivity: Float = 1.0
+    /// Only react to sounds shaped like piano notes (ignores voice and room noise).
+    public var pianoOnly = true
+    /// Whether the last processed frame sounded like a piano note.
+    public private(set) var isPianoTone = false
+
+    private var toneFilter = PianoToneFilter()
 
     private var noiseFloor: Float = 0.002
     private var previousRMS: Float = 0
@@ -71,6 +77,7 @@ public struct NoteMatcher {
 
     public mutating func process(_ frame: AnalysisFrame) -> Verdict {
         defer { previousRMS = frame.rms }
+        isPianoTone = toneFilter.process(frame) || !pianoOnly
 
         // Track the noise floor slowly upward, quickly downward.
         if frame.rms < noiseFloor { noiseFloor = max(0.0005, noiseFloor * 0.9 + frame.rms * 0.1) }
@@ -83,11 +90,16 @@ public struct NoteMatcher {
             wrongReported = false
             // Silence after a note counts as a "release": the next strike is an onset.
             if frame.rms < gate * 0.7 { onsetSeen = true }
+            isPianoTone = false
             return .silence
         }
 
         if frame.rms > previousRMS * 1.35 && frame.rms > gate * 1.5 { onsetSeen = true }
-        guard !expected.isEmpty else { return .listening }
+        guard !expected.isEmpty, isPianoTone else {
+            hits = 0
+            wrongFrames = 0
+            return .listening
+        }
 
         let allPresent = expected.allSatisfy { isPresent($0, in: frame) }
         if allPresent && onsetSeen {

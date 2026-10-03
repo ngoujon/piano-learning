@@ -95,17 +95,3 @@ struct KeyboardView: View {
     }
 }
 
-extension KeyboardView {
-    /// A keyboard range that fits the given notes, padded to whole octaves.
-    static func range(for pitches: [Int], minimumOctaves: Int = 3) -> ClosedRange<Int> {
-        guard let lo = pitches.min(), let hi = pitches.max() else { return 48...84 }
-        var low = (lo / 12) * 12
-        var high = ((hi / 12) + 1) * 12
-        while high - low < minimumOctaves * 12 {
-            if low > 21 { low -= 12 }
-            if high - low < minimumOctaves * 12, high < 108 { high += 12 }
-            if low <= 21 && high >= 108 { break }
-        }
-        return max(21, low)...min(108, high)
-    }
-}

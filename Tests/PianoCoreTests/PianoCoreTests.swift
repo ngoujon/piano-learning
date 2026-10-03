@@ -161,17 +161,18 @@ private func pianoTone(midi notes: [Int], sampleRate: Double = 48_000, count: In
         for _ in 0..<5 { #expect(m.process(silence) == .silence) }
         let tone = analyzer.analyze(pianoTone(midi: [69]))
         var verdicts: [NoteMatcher.Verdict] = []
-        for _ in 0..<3 { verdicts.append(m.process(tone)) }
+        // A piano note is recognised once its pitch and envelope have been steady for a few frames.
+        for _ in 0..<5 { verdicts.append(m.process(tone)) }
         #expect(verdicts.contains(.correct))
 
         // Wrong note gets reported (but not the previous step's note, which may still ring).
         m.reset(expected: [72])
         _ = m.process(silence)
-        #expect(!(0..<4).map { _ in m.process(tone) }.contains(.wrong(69)))
+        #expect(!(0..<6).map { _ in m.process(tone) }.contains(.wrong(69)))
         m.reset(expected: [74])
         _ = m.process(silence)
         let other = analyzer.analyze(pianoTone(midi: [65]))
-        let wrong = (0..<4).map { _ in m.process(other) }
+        let wrong = (0..<6).map { _ in m.process(other) }
         #expect(wrong.contains(.wrong(65)))
         #expect(!wrong.contains(.correct))
     }

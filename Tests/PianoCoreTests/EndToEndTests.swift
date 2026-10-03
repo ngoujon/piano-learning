@@ -134,4 +134,43 @@ import Testing
         let result = simulate(audio: audio, steps: Array(steps))
         #expect(result.completed == steps.count, "validated \(result.completed)/\(steps.count)")
     }
+
+    /// Loads a speech recording (made with `say`) as mono samples.
+    func speech(_ name: String) throws -> ([Float], Double) {
+        let url = try #require(Bundle.module.url(forResource: name, withExtension: "wav", subdirectory: "Fixtures"))
+        let file = try AVAudioFile(forReading: url)
+        let buffer = try #require(AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length)))
+        try file.read(into: buffer)
+        let samples = Array(UnsafeBufferPointer(start: buffer.floatChannelData![0], count: Int(buffer.frameLength)))
+        return (samples, file.processingFormat.sampleRate)
+    }
+
+    @Test(arguments: ["speech-fr", "speech-en"])
+    func talkingIsNotTakenForNotes(name: String) throws {
+        let (audio, rate) = try speech(name)
+        // Whatever note the lesson expects in the voice range, talking must neither validate it nor count as a mistake.
+        for note in 40...64 {
+            let result = simulate(audio: audio, steps: [[note]], sampleRate: rate)
+            #expect(result.completed == 0, "note \(note) validated by speech")
+            #expect(result.wrong == 0, "speech reported as a wrong note while expecting \(note)")
+        }
+    }
+
+    @Test func pianoFilterCanBeTurnedOff() throws {
+        let (audio, rate) = try speech("speech-fr")
+        let analyzer = PitchAnalyzer(sampleRate: rate)
+        var filtered = NoteMatcher(), unfiltered = NoteMatcher()
+        unfiltered.pianoOnly = false
+        var heard = (filtered: 0, unfiltered: 0)
+        let hop = Int(rate * 0.04)
+        var pos = 4096
+        while pos <= audio.count {
+            let frame = analyzer.analyze(Array(audio[max(0, pos - analyzer.fftSize)..<pos]))
+            if filtered.process(frame) != .silence, filtered.isPianoTone { heard.filtered += 1 }
+            if unfiltered.process(frame) != .silence, unfiltered.isPianoTone { heard.unfiltered += 1 }
+            pos += hop
+        }
+        #expect(heard.unfiltered > 100)
+        #expect(heard.filtered * 20 < heard.unfiltered)
+    }
 }

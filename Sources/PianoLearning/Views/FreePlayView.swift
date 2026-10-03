@@ -8,6 +8,7 @@ struct FreePlayView: View {
     @ObservedObject private var mic = MicrophoneListener.shared
     @ObservedObject private var midi = MIDIInputService.shared
     @AppStorage("micSensitivity") private var micSensitivity = 1.0
+    @AppStorage("pianoOnly") private var pianoOnly = true
 
     @State private var detected: [Int] = []
     @State private var label: String?
@@ -79,6 +80,7 @@ struct FreePlayView: View {
         .navigationTitle("Pratique libre")
         .onAppear {
             matcher.sensitivity = Float(micSensitivity)
+            matcher.pianoOnly = pianoOnly
             let mic = MicrophoneListener.shared
             mic.onFrame = { frame in handle(frame) }
             mic.start()
@@ -95,7 +97,7 @@ struct FreePlayView: View {
 
     private func handle(_ frame: AnalysisFrame) {
         let verdict = matcher.process(frame)
-        guard verdict != .silence else {
+        guard verdict != .silence, matcher.isPianoTone else {
             detected = []
             label = nil
             cents = nil

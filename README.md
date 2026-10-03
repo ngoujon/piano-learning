@@ -4,11 +4,11 @@ A macOS app for learning the piano one piece at a time. It listens to your piano
 
 > The app's interface is in French.
 
-![Lesson: the app waits for the right note, shown on the staff and on the keyboard](docs/screenshots/lesson.png)
+![Lesson in full screen: the score, the note to play on the staff, and the full 88-key keyboard](docs/screenshots/lesson-fullscreen.png)
 
 ## Download
 
-Get [`exports/Piano-Learning-1.0-macOS.zip`](exports/Piano-Learning-1.0-macOS.zip). It runs on macOS 14 (Sonoma) or later, on both Apple Silicon and Intel Macs.
+Get [`exports/Piano-Learning-1.1-macOS.zip`](exports/Piano-Learning-1.1-macOS.zip). It runs on macOS 14 (Sonoma) or later, on both Apple Silicon and Intel Macs.
 
 1. Unzip it and drag **Piano Learning.app** into your Applications folder.
 2. The app isn't signed by an identified Apple developer, so macOS blocks it the first time you open it. To allow it, open it once, then go to **System Settings › Privacy & Security** and click **Open Anyway**. You can also run this in Terminal:
@@ -32,6 +32,7 @@ Get [`exports/Piano-Learning-1.0-macOS.zip`](exports/Piano-Learning-1.0-macOS.zi
   - hear the note (Space), skip (→), go back (←), loop a difficult passage
   - "any octave" option, microphone sensitivity and microphone choice
   - the PDF score is shown next to the lesson
+  - the on-screen keyboard always shows all 88 keys, like a real piano, so it never shifts while you play
   - USB/Bluetooth MIDI keyboards are supported, with exact detection
 - **Learn from a PDF alone**: optical music recognition with [Audiveris](https://audiveris.github.io), a free tool you can install from the app in one click. Results are reliable on simple scores and approximate on dense ones.
 - **Listen to a piece**: MIDI piano playback at 50/75/100 % speed, with the keys lighting up.
@@ -51,12 +52,13 @@ scripts/test.sh                 # tests (parsers, pitch detection, end-to-end au
 
 ## Tips for microphone detection
 
+- The app only reacts to sounds shaped like piano notes: a steady pitch that fades after the key is struck. Talking and room noise are ignored. If some notes of your piano aren't recognised, turn off "Ignorer la voix et les bruits" in *Options* or in Settings (⌘,).
 - Put the microphone close to the piano. A gaming headset mic with noise cancellation can filter out the piano, so a USB mic or a MacBook's built-in mic works better. You can choose the microphone in *Options* or in Settings (⌘,).
 - Start with "Main droite" (right hand) and "Mélodie seule" (melody only). Chords are detected, but single notes are detected most reliably.
 - The app stops listening while it plays a sound itself, so it can't validate its own notes.
 
 ## Architecture
 
-- `Sources/PianoCore`: testable logic. It covers MIDI/MusicXML reading, MIDI writing, splitting a piece into steps (hands, chords), pitch analysis (YIN + harmonic spectrum), `NoteMatcher` (right/wrong decision) and the catalogue parser.
+- `Sources/PianoCore`: testable logic. It covers MIDI/MusicXML reading, MIDI writing, splitting a piece into steps (hands, chords), pitch analysis (YIN + harmonic spectrum), `PianoToneFilter` (tells piano notes from voice and noise), `NoteMatcher` (right/wrong decision) and the catalogue parser.
 - `Sources/PianoLearning`: the SwiftUI app. It contains the catalogue, collection, lesson and free play screens, the audio engine (the macOS GM piano sampler), microphone input, MIDI keyboard input and Audiveris OCR.
 - `PIANO_TEST_AUDIO=file.wav` replaces the microphone with an audio file, so you can test a lesson without a piano. Add `PIANO_TEST_AUDIBLE=1` to hear it.
