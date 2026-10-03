@@ -1,43 +1,62 @@
 # Piano Learning 🎹
 
-Application macOS pour apprendre le piano, morceau par morceau, avec reconnaissance de la note jouée au micro.
+A macOS app for learning the piano one piece at a time. It listens to your piano through the microphone and checks each note you play.
 
-## Fonctionnalités
+> The app's interface is in French.
 
-- **Catalogue en ligne** : toutes les partitions gratuites de [partition-piano-gratuite.fr](https://www.partition-piano-gratuite.fr/) (niveau, compositeur, recherche), **écoute de l'aperçu MP3**, visualisation du PDF, et ajout en un clic (PDF + MIDI téléchargés).
-- **Ma collection** : morceaux téléchargés ou importés (PDF, MIDI, MusicXML `.musicxml/.mxl`) via le bouton *Importer* (⌘O), le glisser-déposer, ou « Ouvrir avec » depuis le Finder. Un PDF et un MIDI portant le même nom sont regroupés ; un PDF seul reconnu dans le catalogue récupère automatiquement son MIDI.
-- **Apprentissage (mode attente)** : l'app affiche la note à jouer (nom, portée clé de sol/clé de fa, touche du clavier), écoute votre piano au micro et **passe à la note suivante seulement quand la bonne touche est jouée**. Mauvaise note signalée, précision et progression enregistrées, reprise là où vous vous êtes arrêté.
-  - main droite / main gauche / deux mains, « mélodie seule » ou accords complets
-  - écouter la note (espace), passer (→), revenir (←), boucle sur un passage difficile
-  - option « n'importe quelle octave », sensibilité du micro, choix du micro
-  - partition PDF affichée à côté pendant la leçon
-  - clavier MIDI USB/Bluetooth pris en charge (détection exacte)
-- **Apprendre depuis un PDF seul** : reconnaissance optique de partition avec [Audiveris](https://audiveris.github.io) (logiciel libre, installable en un clic depuis l'app). Résultat fiable sur les partitions simples, approximatif sur les partitions chargées.
-- **Écouter un morceau** (rendu MIDI piano, 50/75/100 %) avec les touches qui s'allument.
-- **Pratique libre** : le micro affiche la note jouée (et l'accordage) pendant que vous lisez une partition.
+![Lesson: the app waits for the right note, shown on the staff and on the keyboard](docs/screenshots/lesson.png)
 
-## Construire et lancer
+## Download
 
-Nécessite macOS 14+ et les Command Line Tools (Xcode non obligatoire).
+Get [`exports/Piano-Learning-1.0-macOS.zip`](exports/Piano-Learning-1.0-macOS.zip). It runs on macOS 14 (Sonoma) or later, on both Apple Silicon and Intel Macs.
+
+1. Unzip it and drag **Piano Learning.app** into your Applications folder.
+2. The app isn't signed by an identified Apple developer, so macOS blocks it the first time you open it. To allow it, open it once, then go to **System Settings › Privacy & Security** and click **Open Anyway**. You can also run this in Terminal:
+   ```bash
+   xattr -dr com.apple.quarantine "/Applications/Piano Learning.app"
+   ```
+3. Allow microphone access when the app asks for it. Note detection needs it.
+
+## Features
+
+- **Online catalogue**: every free score from [partition-piano-gratuite.fr](https://www.partition-piano-gratuite.fr/), with level and composer filters and search. You can play the MP3 preview, view the PDF, and add a piece to your collection in one click (this downloads the PDF and the MIDI file).
+
+  ![Online catalogue](docs/screenshots/catalog.png)
+
+- **My collection**: pieces you downloaded or imported (PDF, MIDI, MusicXML `.musicxml/.mxl`). You can import with the *Import* button (⌘O), by drag and drop, or with "Open With" in the Finder. A PDF and a MIDI file with the same name are grouped together. When you import a PDF on its own and it matches a catalogue entry, the app fetches its MIDI file for you.
+
+  ![Piece details with score, progress and playback](docs/screenshots/piece.png)
+
+- **Learning (wait mode)**: the app shows the note to play by name, on a treble/bass staff and on the keyboard. It listens through the microphone and **moves on only when you play the right key**. Wrong notes are flagged. Accuracy and progress are saved, and you pick up where you left off.
+  - right hand, left hand or both hands; melody only or full chords
+  - hear the note (Space), skip (→), go back (←), loop a difficult passage
+  - "any octave" option, microphone sensitivity and microphone choice
+  - the PDF score is shown next to the lesson
+  - USB/Bluetooth MIDI keyboards are supported, with exact detection
+- **Learn from a PDF alone**: optical music recognition with [Audiveris](https://audiveris.github.io), a free tool you can install from the app in one click. Results are reliable on simple scores and approximate on dense ones.
+- **Listen to a piece**: MIDI piano playback at 50/75/100 % speed, with the keys lighting up.
+- **Free play**: the microphone shows the note you're playing (with tuning) while you read a score.
+
+## Build and run
+
+You need macOS 14+ and the Command Line Tools. Xcode isn't required.
 
 ```bash
-scripts/build_app.sh            # crée build/Piano Learning.app
+scripts/build_app.sh            # builds build/Piano Learning.app
 open "build/Piano Learning.app"
-scripts/build_app.sh --install  # copie aussi l'app dans /Applications
-scripts/package.sh              # zip universel (Apple Silicon + Intel) sur le Bureau, pour un autre Mac
-scripts/test.sh                 # tests (parseurs, détection de hauteur, tests audio de bout en bout)
+scripts/build_app.sh --install  # also copies the app to /Applications
+scripts/package.sh exports      # universal zip (Apple Silicon + Intel) in exports/, for another Mac
+scripts/test.sh                 # tests (parsers, pitch detection, end-to-end audio tests)
 ```
 
-Au premier lancement d'une leçon, macOS demande l'accès au micro : acceptez-le.
+## Tips for microphone detection
 
-## Conseils pour la détection au micro
-
-- Placez le micro près du piano ; un micro de casque gaming avec réduction de bruit peut atténuer le piano — un micro USB ou celui d'un Mac portable fonctionne mieux. Le micro se choisit dans *Options* ou dans les Réglages (⌘,).
-- Commencez avec « Main droite » + « Mélodie seule ». Les accords sont détectés, mais la détection d'une note seule est la plus fiable.
-- L'app coupe l'écoute pendant qu'elle joue elle-même un son, pour ne pas s'auto-valider.
+- Put the microphone close to the piano. A gaming headset mic with noise cancellation can filter out the piano, so a USB mic or a MacBook's built-in mic works better. You can choose the microphone in *Options* or in Settings (⌘,).
+- Start with "Main droite" (right hand) and "Mélodie seule" (melody only). Chords are detected, but single notes are detected most reliably.
+- The app stops listening while it plays a sound itself, so it can't validate its own notes.
 
 ## Architecture
 
-- `Sources/PianoCore` : logique testable — lecture MIDI/MusicXML, écriture MIDI, découpage en étapes (mains, accords), analyse de hauteur (YIN + spectre harmonique), `NoteMatcher` (décision juste/faux), parseur du catalogue.
-- `Sources/PianoLearning` : app SwiftUI — catalogue, collection, leçon, pratique libre, moteur audio (échantillonneur piano GM de macOS), micro, clavier MIDI, OCR Audiveris.
-- Variable `PIANO_TEST_AUDIO=fichier.wav` : remplace le micro par un fichier audio (test d'une leçon sans piano).
+- `Sources/PianoCore`: testable logic. It covers MIDI/MusicXML reading, MIDI writing, splitting a piece into steps (hands, chords), pitch analysis (YIN + harmonic spectrum), `NoteMatcher` (right/wrong decision) and the catalogue parser.
+- `Sources/PianoLearning`: the SwiftUI app. It contains the catalogue, collection, lesson and free play screens, the audio engine (the macOS GM piano sampler), microphone input, MIDI keyboard input and Audiveris OCR.
+- `PIANO_TEST_AUDIO=file.wav` replaces the microphone with an audio file, so you can test a lesson without a piano. Add `PIANO_TEST_AUDIBLE=1` to hear it.
