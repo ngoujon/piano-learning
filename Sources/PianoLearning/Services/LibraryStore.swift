@@ -318,7 +318,10 @@ final class LibraryStore: ObservableObject {
     }
 
     static func prettyTitle(_ fileName: String) -> String {
-        let spaced = fileName.replacingOccurrences(of: "[_-]+", with: " ", options: .regularExpression)
+        // "lettre-a-elise" -> "Lettre a elise", but keep the dashes of "Sonate - II. Adagio" or "Fantaisie-Impromptu".
+        let separators = fileName.contains(" ") ? "_+" : "[_-]+"
+        let spaced = fileName.replacingOccurrences(of: separators, with: " ", options: .regularExpression)
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespaces)
         guard let first = spaced.first else { return fileName }
         return first.uppercased() + spaced.dropFirst()

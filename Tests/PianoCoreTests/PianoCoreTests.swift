@@ -129,6 +129,39 @@ private func pianoTone(midi notes: [Int], sampleRate: Double = 48_000, count: In
         #expect(CatalogParser.bestMatch(forFileName: "Lettre à Elise (copie)", in: [e])?.id == "x")
         #expect(CatalogParser.bestMatch(forFileName: "Clair de lune", in: [e]) == nil)
     }
+
+    @Test func numberedWorksDoNotMatchOtherPieces() {
+        func entry(_ title: String, _ stem: String) -> CatalogEntry {
+            CatalogEntry(id: stem, title: title, composer: "", level: nil, info: "", previewURL: nil,
+                         pdfURL: URL(string: "https://x/\(stem).pdf"), midiURL: URL(string: "https://x/\(stem).mid"), zipURL: nil)
+        }
+        let catalog = [entry("Prélude en Do majeur", "prelude-en-do-majeur"), entry("Nocturne n°20", "nocturne-20"),
+                       entry("Menuet en sol", "menuet-en-sol"), entry("Etude opus 10 n°3", "etude-op10-n3"),
+                       entry("Concerto Italien - I", "concerto-italien-1"), entry("Concerto Italien - II", "concerto-italien-2"),
+                       entry("Frère Jacques", "frere-jacques"), entry("Frère Jacques (Canon)", "frere-jacques-canon")]
+        #expect(CatalogParser.bestMatch(forFileName: "Concerto Italien - II", in: catalog)?.id == "concerto-italien-2")
+        #expect(CatalogParser.bestMatch(forFileName: "Frère Jacques (Canon)", in: catalog)?.id == "frere-jacques-canon")
+        #expect(CatalogParser.bestMatch(forFileName: "etude_op10_n3", in: catalog)?.id == "etude-op10-n3")
+        #expect(CatalogParser.bestMatch(forFileName: "Deuxième Arabesque", in: [entry("Arabesque n°1", "arabesque-1")]) == nil)
+        #expect(CatalogParser.bestMatch(forFileName: "Prélude op. 28 n°4", in: catalog) == nil)
+        #expect(CatalogParser.bestMatch(forFileName: "Nocturne op. 9 n°2", in: catalog) == nil)
+        #expect(CatalogParser.bestMatch(forFileName: "Menuet en sol mineur BWV Anh. 115", in: catalog) == nil)
+        #expect(CatalogParser.bestMatch(forFileName: "Nocturne 20", in: catalog)?.id == "nocturne-20")
+        #expect(CatalogParser.bestMatch(forFileName: "Etude opus 10 n°3", in: catalog)?.id == "etude-op10-n3")
+        #expect(CatalogParser.bestMatch(forFileName: "Prélude en do majeur", in: catalog)?.id == "prelude-en-do-majeur")
+    }
+
+    @Test func composerBreaksTiesButNeverMatchesAlone() {
+        let nursery = CatalogEntry(id: "nursery", title: "Au Clair de la lune", composer: "Chanson pour enfants", level: 1, info: "",
+                                   previewURL: nil, pdfURL: nil, midiURL: URL(string: "https://x/au-clair-de-la-lune.mid"), zipURL: nil)
+        let debussy = CatalogEntry(id: "debussy", title: "Clair de Lune", composer: "C. Debussy", level: 4, info: "",
+                                   previewURL: nil, pdfURL: nil, midiURL: URL(string: "https://x/clair-de-lune.mid"), zipURL: nil)
+        let nocturne = CatalogEntry(id: "nocturne", title: "Nocturne C#m", composer: "F. Chopin", level: 4, info: "",
+                                    previewURL: nil, pdfURL: nil, midiURL: URL(string: "https://x/chopin-nocturne-c.mid"), zipURL: nil)
+        #expect(CatalogParser.bestMatch(forFileName: "Clair de lune (Debussy)", in: [nursery, debussy])?.id == "debussy")
+        #expect(CatalogParser.bestMatch(forFileName: "Debussy", in: [nursery, debussy]) == nil)
+        #expect(CatalogParser.bestMatch(forFileName: "Chopin", in: [nocturne]) == nil)
+    }
 }
 
 @Suite struct PitchTests {

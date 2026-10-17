@@ -117,16 +117,27 @@ public enum CatalogParser {
     public static func bestMatch(forFileName name: String, in entries: [CatalogEntry]) -> CatalogEntry? {
         let target = normalize(name)
         guard !target.isEmpty else { return nil }
-        let targetWords = Set(target.split(separator: " ").map(String.init))
+        // "op25" -> "op 25", so numbers compare the same way in "op. 25" and "op25".
+        func words(_ s: String) -> Set<String> {
+            Set(normalize(s).replacingOccurrences(of: "(?<=[a-z])(?=[0-9])|(?<=[0-9])(?=[a-z])", with: " ", options: .regularExpression)
+                .split(separator: " ").map(String.init))
+        }
+        let targetWords = words(name)
+        // Opus / catalogue numbers identify the work: "Prélude op. 28 n°4" is not "Prélude en Do majeur".
+        let romanNumerals: Set<String> = ["i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x", "xi", "xii"]
+        let targetNumbers = targetWords.filter { $0.allSatisfy(\.isNumber) || romanNumerals.contains($0) }
+        let significant = targetWords.filter { $0.count > 2 }
         var best: (CatalogEntry, Double)?
         for e in entries {
             let fileStem = normalize(((e.midiURL ?? e.pdfURL)?.deletingPathExtension().lastPathComponent) ?? "")
-            if fileStem == target { return e }
-            let words = Set(normalize(e.title).split(separator: " ").map(String.init)).union(fileStem.split(separator: " ").map(String.init))
-            let significant = targetWords.filter { $0.count > 2 }
-            let titleWords = Set(normalize(e.title).split(separator: " ").map(String.init)).filter { $0.count > 2 }
-            let common = Double(significant.intersection(words).count)
-            guard common >= 2 || (common >= 1 && significant.count == 1) else { continue }
+            if fileStem == target || normalize(e.title) == target { return e }
+            let pieceWords = words(e.title).union(words(fileStem))
+            guard targetNumbers.isSubset(of: pieceWords) else { continue }
+            let titleWords = words(e.title).filter { $0.count > 2 }
+            let titleCommon = significant.intersection(pieceWords).count
+            // The composer only breaks ties ("Clair de lune (Debussy)"); it never matches on its own.
+            let common = Double(titleCommon + significant.intersection(words(e.composer)).subtracting(pieceWords).count)
+            guard titleCommon >= 1, common >= 2 || (significant.count == 1 && !significant.isDisjoint(with: titleWords)) else { continue }
             let score = common / Double(max(min(significant.count, titleWords.count), 1))
             if score > (best?.1 ?? 0) { best = (e, score) }
         }
