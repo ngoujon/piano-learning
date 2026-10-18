@@ -1,7 +1,7 @@
 import PianoCore
 import SwiftUI
 
-/// Browse, preview and download the free scores of partition-piano-gratuite.fr.
+/// Browse, preview and download the free scores of partition-piano-gratuite.fr and the bundled public-domain pieces.
 struct CatalogView: View {
     @EnvironmentObject private var catalog: CatalogService
     @EnvironmentObject private var library: LibraryStore
@@ -11,8 +11,13 @@ struct CatalogView: View {
     @State private var search = ""
     @State private var level: Int? = nil
     @State private var composer: String? = nil
+    @State private var source: String? = nil
     @State private var pdfPreview: CatalogEntry?
     @State private var errorMessage: String?
+
+    private var sources: [String] {
+        Array(Set(catalog.entries.map(\.sourceName))).sorted()
+    }
 
     private var composers: [String] {
         Array(Set(catalog.entries.map(\.composer).filter { !$0.isEmpty })).sorted()
@@ -22,6 +27,7 @@ struct CatalogView: View {
         catalog.entries.filter { e in
             (level == nil || e.level == level) &&
             (composer == nil || e.composer == composer) &&
+            (source == nil || e.sourceName == source) &&
             (search.isEmpty || CatalogParser.normalize("\(e.title) \(e.composer) \(e.info)").contains(CatalogParser.normalize(search)))
         }
         .sorted { ($0.level ?? 9, $0.title) < ($1.level ?? 9, $1.title) }
@@ -95,6 +101,11 @@ struct CatalogView: View {
                 ForEach(composers, id: \.self) { Text($0).tag(String?.some($0)) }
             }
             .frame(maxWidth: 260)
+            Picker("Source", selection: $source) {
+                Text("Toutes").tag(String?.none)
+                ForEach(sources, id: \.self) { Text($0).tag(String?.some($0)) }
+            }
+            .frame(maxWidth: 280)
             Spacer()
             if catalog.isLoading { ProgressView().controlSize(.small) }
             if let e = catalog.error { Text(e).font(.caption).foregroundStyle(.orange) }
@@ -161,6 +172,7 @@ private struct CatalogRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.title).font(.headline)
                 Text(entry.composer).font(.subheadline).foregroundStyle(.secondary)
+                    + Text("  ·  \(entry.sourceName)").font(.caption).foregroundStyle(.tertiary)
                 if !entry.info.isEmpty {
                     Text(entry.info).font(.caption).foregroundStyle(.tertiary).lineLimit(2)
                 }

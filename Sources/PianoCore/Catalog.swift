@@ -11,9 +11,11 @@ public struct CatalogEntry: Codable, Hashable, Identifiable, Sendable {
     public var pdfURL: URL?
     public var midiURL: URL?
     public var zipURL: URL?
+    /// Where the files come from; nil for partition-piano-gratuite.fr.
+    public var source: String?
 
     public init(id: String, title: String, composer: String, level: Int?, info: String,
-                previewURL: URL?, pdfURL: URL?, midiURL: URL?, zipURL: URL?) {
+                previewURL: URL?, pdfURL: URL?, midiURL: URL?, zipURL: URL?, source: String? = nil) {
         self.id = id
         self.title = title
         self.composer = composer
@@ -23,7 +25,11 @@ public struct CatalogEntry: Codable, Hashable, Identifiable, Sendable {
         self.pdfURL = pdfURL
         self.midiURL = midiURL
         self.zipURL = zipURL
+        self.source = source
     }
+
+    public static let siteSourceName = "partition-piano-gratuite.fr"
+    public var sourceName: String { source ?? Self.siteSourceName }
 
     public static func levelLabel(_ level: Int?) -> String {
         switch level {

@@ -1,10 +1,12 @@
 import Foundation
 import PianoCore
 
-/// Loads the list of free scores from partition-piano-gratuite.fr (with an offline cache).
+/// Loads the list of free scores from partition-piano-gratuite.fr (with an offline cache),
+/// alongside the public-domain pieces bundled in `ClassicsCatalog`.
 @MainActor
 final class CatalogService: ObservableObject {
-    @Published private(set) var entries: [CatalogEntry] = []
+    @Published private(set) var siteEntries: [CatalogEntry] = []
+    var entries: [CatalogEntry] { siteEntries + ClassicsCatalog.entries }
     @Published private(set) var isLoading = false
     @Published private(set) var error: String?
     @Published private(set) var lastUpdated: Date?
@@ -15,7 +17,7 @@ final class CatalogService: ObservableObject {
         cacheURL = cacheDirectory.appendingPathComponent("catalog-cache.json")
         if let data = try? Data(contentsOf: cacheURL),
            let cached = try? JSONDecoder().decode([CatalogEntry].self, from: data) {
-            entries = cached
+            siteEntries = cached
             lastUpdated = (try? FileManager.default.attributesOfItem(atPath: cacheURL.path)[.modificationDate]) as? Date
         }
     }
@@ -33,21 +35,21 @@ final class CatalogService: ObservableObject {
             let html = String(data: data, encoding: .utf8) ?? String(decoding: data, as: UTF8.self)
             let parsed = CatalogParser.parse(html: html)
             guard !parsed.isEmpty else {
-                error = "Le site a répondu mais aucune partition n'a été trouvée."
+                error = "partition-piano-gratuite.fr a répondu mais aucune partition n'a été trouvée."
                 return
             }
-            entries = parsed
+            siteEntries = parsed
             lastUpdated = Date()
             if let data = try? JSONEncoder().encode(parsed) { try? data.write(to: cacheURL, options: .atomic) }
         } catch {
-            self.error = entries.isEmpty
-                ? "Impossible de charger le catalogue : \(error.localizedDescription)"
+            self.error = siteEntries.isEmpty
+                ? "Impossible de charger partition-piano-gratuite.fr : \(error.localizedDescription)"
                 : "Hors ligne – affichage du catalogue en cache."
         }
     }
 
     func refreshIfNeeded() async {
-        if entries.isEmpty || (lastUpdated.map { Date().timeIntervalSince($0) > 86_400 } ?? true) {
+        if siteEntries.isEmpty || (lastUpdated.map { Date().timeIntervalSince($0) > 86_400 } ?? true) {
             await refresh()
         }
     }

@@ -19,7 +19,7 @@ Get [`exports/Piano-Learning-1.1-macOS.zip`](exports/Piano-Learning-1.1-macOS.zi
 
 ## Features
 
-- **Online catalogue**: every free score from [partition-piano-gratuite.fr](https://www.partition-piano-gratuite.fr/), with level and composer filters and search. You can play the MP3 preview, view the PDF, and add a piece to your collection in one click (this downloads the PDF and the MIDI file).
+- **Online catalogue**: every free score from [partition-piano-gratuite.fr](https://www.partition-piano-gratuite.fr/), plus about forty classical pieces from the [Mutopia Project](https://www.mutopiaproject.org/) and [Wikimedia Commons](https://commons.wikimedia.org/) (Chopin, Schumann, Grieg, Bach, Mozart, Beethoven, Schubert…), with level, composer and source filters and search. The classical list is built into the app (`ClassicsCatalog.swift`) and only holds public-domain or freely licensed editions; files are downloaded from their source when you add a piece, and each entry credits its edition and licence. You can play the MP3 preview, view the PDF, and add a piece to your collection in one click (this downloads the PDF and the MIDI file).
 
   ![Online catalogue](docs/screenshots/catalog.png)
 
@@ -59,6 +59,6 @@ scripts/test.sh                 # tests (parsers, pitch detection, end-to-end au
 
 ## Architecture
 
-- `Sources/PianoCore`: testable logic. It covers MIDI/MusicXML reading, MIDI writing, splitting a piece into steps (hands, chords), pitch analysis (YIN + harmonic spectrum), `PianoToneFilter` (tells piano notes from voice and noise), `NoteMatcher` (right/wrong decision) and the catalogue parser.
+- `Sources/PianoCore`: testable logic. It covers MIDI/MusicXML reading, MIDI writing, splitting a piece into steps (hands, chords), pitch analysis (YIN + harmonic spectrum), `PianoToneFilter` (tells piano notes from voice and noise), `NoteMatcher` (right/wrong decision) the catalogue parser and the built-in list of public-domain pieces.
 - `Sources/PianoLearning`: the SwiftUI app. It contains the catalogue, collection, lesson and free play screens, the audio engine (the macOS GM piano sampler), microphone input, MIDI keyboard input and Audiveris OCR.
 - `PIANO_TEST_AUDIO=file.wav` replaces the microphone with an audio file, so you can test a lesson without a piano. Add `PIANO_TEST_AUDIBLE=1` to hear it.

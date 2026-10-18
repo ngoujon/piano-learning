@@ -108,7 +108,7 @@ struct ContentView: View {
         guard !urls.isEmpty else { return }
         AppDelegate.pendingFiles = []
         Task {
-            if catalog.entries.isEmpty { await catalog.refresh() }
+            if catalog.siteEntries.isEmpty { await catalog.refresh() }
             let added = await library.importFiles(urls, catalog: catalog.entries)
             app.practicingPieceID = nil
             app.sidebar = .library

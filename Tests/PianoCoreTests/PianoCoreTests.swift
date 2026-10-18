@@ -151,6 +151,30 @@ private func pianoTone(midi notes: [Int], sampleRate: Double = 48_000, count: In
         #expect(CatalogParser.bestMatch(forFileName: "Prélude en do majeur", in: catalog)?.id == "prelude-en-do-majeur")
     }
 
+    @Test func bundledClassicsAreFreeAndDownloadable() throws {
+        let entries = ClassicsCatalog.entries
+        #expect(entries.count >= 30)
+        #expect(Set(entries.map(\.id)).count == entries.count)
+        for e in entries {
+            #expect(e.midiURL?.scheme == "https" && e.midiURL?.pathExtension == "mid", "\(e.title)")
+            #expect(e.pdfURL == nil || e.pdfURL?.pathExtension == "pdf", "\(e.title)")
+            // Only sources that allow redistribution, each credited with its licence.
+            #expect(["Mutopia Project", "Wikimedia Commons"].contains(e.sourceName), "\(e.title)")
+            #expect(e.info.contains("Licence") || e.info.contains("domaine public"), "\(e.title)")
+            #expect(e.level != nil && !e.composer.isEmpty, "\(e.title)")
+        }
+        // Importing a file named after a bundled piece enriches it with that piece, even next to the site catalogue.
+        let html = try String(contentsOf: try fixture("catalog_excerpt.html"), encoding: .utf8)
+        let all = CatalogParser.parse(html: html) + entries
+        for e in entries { #expect(CatalogParser.bestMatch(forFileName: e.title, in: all)?.id == e.id, "\(e.title)") }
+    }
+
+    @Test func cachedEntriesWithoutSourceStillDecode() throws {
+        let json = #"[{"id":"/a.mid","title":"A","composer":"B","info":"","midiURL":"https://x/a.mid"}]"#
+        let entries = try JSONDecoder().decode([CatalogEntry].self, from: Data(json.utf8))
+        #expect(entries.first?.sourceName == CatalogEntry.siteSourceName)
+    }
+
     @Test func composerBreaksTiesButNeverMatchesAlone() {
         let nursery = CatalogEntry(id: "nursery", title: "Au Clair de la lune", composer: "Chanson pour enfants", level: 1, info: "",
                                    previewURL: nil, pdfURL: nil, midiURL: URL(string: "https://x/au-clair-de-la-lune.mid"), zipURL: nil)
