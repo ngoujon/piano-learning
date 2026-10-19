@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import PianoCore
 import SwiftUI
@@ -43,6 +44,8 @@ final class PracticeSession: ObservableObject {
     @Published private(set) var isListening = false
     /// Range of steps being looped (nil = whole piece).
     @Published var loopRange: ClosedRange<Int>?
+    /// The app is playing the piece in rhythm; the cursor follows it and input is ignored.
+    @Published private(set) var isPlayingPiece = false
 
     private var matcher = NoteMatcher()
     /// The finished run was already recorded (avoid counting it twice when leaving).
@@ -50,6 +53,8 @@ final class PracticeSession: ObservableObject {
     private var startedAt = Date()
     private var feedbackTask: Task<Void, Never>?
     private let onFinish: (Double, Double?, Int?) -> Void
+    private var playback: AnyCancellable?
+    private var playbackStartIndex = 0
 
     init(piece: Piece, score: Score, startStep: Int? = nil, onFinish: @escaping (Double, Double?, Int?) -> Void) {
         self.piece = piece
@@ -107,6 +112,7 @@ final class PracticeSession: ObservableObject {
     // MARK: - Navigation
 
     func restart() {
+        stopPiece()
         index = loopRange?.lowerBound ?? 0
         correctCount = 0
         wrongCount = 0
@@ -117,6 +123,7 @@ final class PracticeSession: ObservableObject {
     }
 
     func jump(to step: Int) {
+        stopPiece()
         guard !steps.isEmpty else { return }
         index = max(0, min(steps.count - 1, step))
         finished = false
@@ -134,6 +141,42 @@ final class PracticeSession: ObservableObject {
     func playTarget() {
         guard let step = currentStep else { return }
         SoundEngine.shared.play(step.pitches, duration: max(0.5, min(step.duration, 1.2)))
+    }
+
+    /// Plays the piece in its own rhythm from the current note (or the looped passage),
+    /// moving the cursor along; afterwards the student is back where the playback started.
+    func playPiece(onlyPracticedHands: Bool, tempo: Double) {
+        guard !steps.isEmpty else { return }
+        stopPiece()
+        if let loop = loopRange, !loop.contains(index) { index = loop.lowerBound }
+        let from = min(index, steps.count - 1)
+        let end = loopRange.map { steps[$0.upperBound].time + steps[$0.upperBound].duration }
+        playbackStartIndex = from
+        isPlayingPiece = true
+        let sound = SoundEngine.shared
+        sound.play(score: score, id: "practice-\(piece.id)", hands: onlyPracticedHands ? options.hands : .both,
+                   from: steps[from].time, to: end, tempo: tempo)
+        playback = sound.$position.combineLatest(sound.$isPlaying)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] position, playing in
+                guard let self, self.isPlayingPiece else { return }
+                guard playing else { self.finishPlayback(); return }
+                // Last note already started, without going back.
+                if let i = self.steps.lastIndex(where: { $0.time <= position + 0.02 }), i > self.index { self.index = i }
+            }
+    }
+
+    func stopPiece() {
+        guard isPlayingPiece else { return }
+        SoundEngine.shared.stop()
+        finishPlayback()
+    }
+
+    private func finishPlayback() {
+        playback = nil
+        isPlayingPiece = false
+        index = playbackStartIndex
+        prepareStep()
     }
 
     /// Simulates a correct answer (used by the on-screen keyboard).
@@ -221,7 +264,7 @@ final class PracticeSession: ObservableObject {
             cents = nil
         }
 
-        guard !finished, currentStep != nil else { return }
+        guard !finished, !isPlayingPiece, currentStep != nil else { return }
         switch verdict {
         case .correct:
             advance(countAsCorrect: true)
@@ -234,7 +277,7 @@ final class PracticeSession: ObservableObject {
     }
 
     private func handleMIDI(_ pitch: Int, on: Bool) {
-        guard on else { return }
+        guard on, !isPlayingPiece else { return }
         heldVirtual.insert(pitch)
         detectedNotes = [pitch]
         detectedLabel = pitch.noteLabel

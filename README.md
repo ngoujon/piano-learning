@@ -30,6 +30,8 @@ Get [`exports/Piano-Learning-1.1-macOS.zip`](exports/Piano-Learning-1.1-macOS.zi
 - **Learning (wait mode)**: the app shows the note to play by name, on a treble/bass staff and on the keyboard. It listens through the microphone and **moves on only when you play the right key**. Wrong notes are flagged. Accuracy and progress are saved, and you pick up where you left off.
   - right hand, left hand or both hands; melody only or full chords
   - hear the note (Space), skip (→), go back (←), loop a difficult passage
+  - **listen to the piece in rhythm** (P) from the current note, or just the looped passage: the staff and keyboard follow along, at 40–125 % speed, with the whole piece or only the hand you practise
+  - **metronome** (M) with a swinging pendulum and beat lights: it uses the piece's time signature and tempo, follows the playback, and can be silent (visual only) so it never interrupts the microphone
   - "any octave" option, microphone sensitivity and microphone choice
   - the PDF score is shown next to the lesson
   - the on-screen keyboard always shows all 88 keys, like a real piano, so it never shifts while you play

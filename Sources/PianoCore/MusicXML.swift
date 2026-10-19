@@ -21,7 +21,7 @@ public enum MusicXMLParser {
             throw ScoreError.invalidMusicXML(parser.parserError?.localizedDescription ?? "analyse impossible")
         }
         guard !delegate.notes.isEmpty else { throw ScoreError.empty }
-        return Score(notes: delegate.notes, trackNames: delegate.trackNames, title: delegate.title)
+        return Score(notes: delegate.notes, trackNames: delegate.trackNames, title: delegate.title, beats: delegate.beats())
     }
 
     /// Unzips a compressed MusicXML file and returns the root score document.
@@ -63,6 +63,11 @@ public enum MusicXMLParser {
         private var lastNoteStart = 0.0
         /// Tempo map in quarter notes -> bpm (shared across parts, first part wins).
         private var tempos: [(Double, Double)] = [(0, 100)]
+        /// Time signatures of the first part, in quarter notes.
+        private var signatures: [(at: Double, beats: Int, unit: Int)] = []
+        private var timeBeats = 0
+        /// Furthest position reached in any part, in quarter notes.
+        private(set) var lengthInQuarters = 0.0
         private var pendingNotes: [(pitch: Int, startQ: Double, durQ: Double, staff: Int, tieStop: Bool, tieStart: Bool, velocity: Int)] = []
 
         // Note state
@@ -149,6 +154,14 @@ public enum MusicXMLParser {
                 } else if parent == "forward" {
                     position += q
                 }
+            case "beats" where parent == "time":
+                // "3+2" style compound values: add the parts.
+                timeBeats = value.split(separator: "+").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }.reduce(0, +)
+            case "beat-type" where parent == "time":
+                if partIndex <= 0, timeBeats > 0, let unit = Int(value) {
+                    signatures.removeAll { $0.at == position }
+                    signatures.append((position, timeBeats, unit))
+                }
             case "per-minute":
                 if let bpm = Double(value), bpm > 0, partIndex <= 0 { tempos.append((position, bpm)) }
             case "note":
@@ -158,6 +171,7 @@ public enum MusicXMLParser {
                 if !isChord {
                     lastNoteStart = position
                     position += duration
+                    lengthInQuarters = max(lengthInQuarters, position)
                 }
                 guard !isRest, let pitch = midiPitch() else { return }
                 pendingNotes.append((pitch, start, duration, staff, tieStop, tieStart, dynamicsVelocity))
@@ -171,6 +185,10 @@ public enum MusicXMLParser {
             let base: [String: Int] = ["C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11]
             guard let b = base[step.uppercased()] else { return nil }
             return (octave + 1) * 12 + b + Int(alter.rounded())
+        }
+
+        func beats() -> [Beat] {
+            Score.beatGrid(signatures: signatures, length: lengthInQuarters) { seconds(atQuarter: $0) }
         }
 
         private func seconds(atQuarter q: Double) -> Double {

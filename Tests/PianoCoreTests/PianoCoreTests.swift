@@ -45,6 +45,35 @@ private func pianoTone(midi notes: [Int], sampleRate: Double = 48_000, count: In
         #expect(first == [76, 75, 76, 75, 76, 71, 74, 72, 69])
     }
 
+    @Test func beatGridFollowsTimeSignatureAndTempo() throws {
+        let elise = try MIDIFileParser.parse(url: try fixture("elise.mid"))
+        #expect(elise.beats.prefix(6).map(\.number) == [1, 2, 3, 1, 2, 3])
+        #expect(elise.beats.allSatisfy { $0.beatsInBar == 3 })
+        #expect(zip(elise.beats, elise.beats.dropFirst()).allSatisfy { $0.time < $1.time })
+        #expect(abs((elise.beats.last?.time ?? 0) - elise.duration) < 2)
+        #expect(elise.initialBPM == 120)
+
+        // 2/4 then 3/8 from quarter 4, at 60 bpm (one second per quarter).
+        let grid = Score.beatGrid(signatures: [(0, 2, 4), (4, 3, 8)], length: 5.5) { $0 }
+        #expect(grid.map(\.number) == [1, 2, 1, 2, 1, 2, 3])
+        #expect(grid.map(\.time) == [0, 1, 2, 3, 4, 4.5, 5])
+        // No signature: 4/4.
+        #expect(Score.beatGrid(signatures: [], length: 4) { $0 }.map(\.beatsInBar) == [4, 4, 4, 4])
+    }
+
+    @Test func musicXMLBeatsUseTheNotatedMetre() throws {
+        let xml = """
+        <score-partwise><part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+        <part id="P1"><measure number="1"><attributes><divisions>1</divisions><time><beats>3</beats><beat-type>4</beat-type></time></attributes>
+        <direction><sound tempo="90"/></direction>
+        <note><pitch><step>C</step><octave>4</octave></pitch><duration>3</duration></note></measure>
+        <measure number="2"><note><pitch><step>D</step><octave>4</octave></pitch><duration>3</duration></note></measure></part></score-partwise>
+        """
+        let score = try MusicXMLParser.parse(data: Data(xml.utf8))
+        #expect(score.beats.map(\.number) == [1, 2, 3, 1, 2, 3])
+        #expect(abs((score.initialBPM ?? 0) - 90) < 0.01)
+    }
+
     @Test func handAssignmentSplitsTracks() throws {
         let score = try MIDIFileParser.parse(url: try fixture("elise.mid"))
         let right = PracticeSequence.build(score: score, options: PracticeOptions(hands: .right, melodyOnly: false))

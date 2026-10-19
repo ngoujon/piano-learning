@@ -23,20 +23,65 @@ public struct ScoreNote: Hashable, Codable, Sendable {
     public var end: Double { start + duration }
 }
 
+/// One beat of the piece's metre, as a metronome would click it.
+public struct Beat: Hashable, Sendable {
+    /// Seconds from the beginning of the piece.
+    public var time: Double
+    /// 1 for the downbeat of a bar.
+    public var number: Int
+    public var beatsInBar: Int
+
+    public init(time: Double, number: Int, beatsInBar: Int) {
+        self.time = time
+        self.number = number
+        self.beatsInBar = beatsInBar
+    }
+}
+
 /// A parsed piece of music, independent of its source format.
 public struct Score: Sendable {
     public var notes: [ScoreNote]
     public var trackNames: [Int: String]
     public var title: String?
+    /// The beat grid (follows tempo and time signature changes); empty when the file has no metre.
+    public var beats: [Beat]
 
-    public init(notes: [ScoreNote], trackNames: [Int: String] = [:], title: String? = nil) {
+    public init(notes: [ScoreNote], trackNames: [Int: String] = [:], title: String? = nil, beats: [Beat] = []) {
         self.notes = notes.sorted { ($0.start, $0.pitch) < ($1.start, $1.pitch) }
         self.trackNames = trackNames
         self.title = title
+        self.beats = beats
     }
 
     public var duration: Double { notes.map(\.end).max() ?? 0 }
     public var tracks: [Int] { Array(Set(notes.map(\.track))).sorted() }
+
+    /// Tempo at the start of the piece, in beats per minute of the notated beat.
+    public var initialBPM: Double? {
+        guard beats.count >= 2, beats[1].time > beats[0].time else { return nil }
+        return 60 / (beats[1].time - beats[0].time)
+    }
+
+    /// Builds the beat grid from time signatures given in quarter notes (`at`, beats per bar, beat unit),
+    /// up to `length` quarters, converting positions with the piece's tempo map.
+    public static func beatGrid(signatures: [(at: Double, beats: Int, unit: Int)], length: Double,
+                                seconds: (Double) -> Double) -> [Beat] {
+        var sigs = signatures.filter { $0.beats > 0 && $0.unit > 0 }.sorted { $0.at < $1.at }
+        if sigs.first.map({ $0.at > 0 }) ?? true { sigs.insert((0, 4, 4), at: 0) }
+        var beats: [Beat] = []
+        for (i, sig) in sigs.enumerated() {
+            let end = i + 1 < sigs.count ? sigs[i + 1].at : length
+            let step = 4.0 / Double(sig.unit)
+            var q = sig.at
+            var n = 0
+            while q < end - 1e-6, beats.count < 100_000 {
+                beats.append(Beat(time: seconds(q), number: n % sig.beats + 1, beatsInBar: sig.beats))
+                n += 1
+                q = sig.at + Double(n) * step
+            }
+        }
+        return beats
+    }
 }
 
 public enum ScoreError: Error, LocalizedError {
@@ -62,6 +107,7 @@ public enum MIDIFileParser {
             case noteOn(channel: Int, pitch: Int, velocity: Int)
             case noteOff(channel: Int, pitch: Int)
             case tempo(microsPerQuarter: Int)
+            case timeSignature(beats: Int, unit: Int)
             case trackName(String)
         }
     }
@@ -178,7 +224,7 @@ public enum MIDIFileParser {
                 close(Key(track: item.track, channel: ch, pitch: p), at: item.event.tick)
             case .trackName(let n):
                 if names[item.track] == nil { names[item.track] = n }
-            case .tempo:
+            case .tempo, .timeSignature:
                 break
             }
         }
@@ -188,7 +234,19 @@ public enum MIDIFileParser {
         }
 
         guard !notes.isEmpty else { throw ScoreError.empty }
-        return Score(notes: notes, trackNames: names, title: names[0])
+        var beats: [Beat] = []
+        if division & 0x8000 == 0 {
+            let ppq = Double(max(division, 1))
+            let signatures = sorted.compactMap { item -> (at: Double, beats: Int, unit: Int)? in
+                if case .timeSignature(let b, let u) = item.event.kind { return (Double(item.event.tick) / ppq, b, u) }
+                return nil
+            }
+            // A later signature at the same tick replaces the earlier one.
+            let unique = Dictionary(signatures.map { ($0.at, $0) }, uniquingKeysWith: { _, last in last }).values
+            let lastNoteTick = Double(lastTick) / ppq
+            beats = Score.beatGrid(signatures: Array(unique), length: lastNoteTick) { secondsForTick(Int(($0 * ppq).rounded())) }
+        }
+        return Score(notes: notes, trackNames: names, title: names[0], beats: beats)
     }
 
     private static func parseTrack(_ r: inout ByteReader) throws -> [RawEvent] {
@@ -212,6 +270,8 @@ public enum MIDIFileParser {
                 if type == 0x51, data.count == 3 {
                     let t = Int(data[0]) << 16 | Int(data[1]) << 8 | Int(data[2])
                     if t > 0 { events.append(RawEvent(tick: tick, kind: .tempo(microsPerQuarter: t))) }
+                } else if type == 0x58, data.count >= 2 {
+                    events.append(RawEvent(tick: tick, kind: .timeSignature(beats: Int(data[0]), unit: 1 << Int(min(data[1], 6)))))
                 } else if type == 0x03 {
                     let name = String(bytes: data, encoding: .utf8) ?? String(bytes: data, encoding: .isoLatin1) ?? ""
                     events.append(RawEvent(tick: tick, kind: .trackName(name.trimmingCharacters(in: .whitespacesAndNewlines))))

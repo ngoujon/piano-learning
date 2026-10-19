@@ -7,12 +7,18 @@ struct PracticeView: View {
     @StateObject private var session: PracticeSession
     @ObservedObject private var mic = MicrophoneListener.shared
     @ObservedObject private var midi = MIDIInputService.shared
+    @ObservedObject private var sound = SoundEngine.shared
+    @StateObject private var metronome = Metronome()
     @EnvironmentObject private var library: LibraryStore
     @AppStorage("showNoteNames") private var showNoteNames = true
     @AppStorage("micSensitivity") private var micSensitivity = 1.0
     @AppStorage("ignoreOctave") private var ignoreOctave = false
     @AppStorage("pianoOnly") private var pianoOnly = true
     @AppStorage("showPDFInPractice") private var showPDF = true
+    /// Speed for "listen to the piece" and the metronome (1 = the piece's tempo).
+    @AppStorage("practiceTempo") private var tempo = 1.0
+    @AppStorage("playOnlyPracticedHands") private var playOnlyPracticedHands = false
+    @AppStorage("metronomeSound") private var metronomeSound = true
     let pdfURL: URL?
     let onClose: () -> Void
 
@@ -43,11 +49,26 @@ struct PracticeView: View {
             session.ignoreOctave = ignoreOctave
             session.pianoOnly = pianoOnly
             session.startListening()
+            metronome.beatsPerBar = session.score.beats.first?.beatsInBar ?? 4
+            metronome.bpm = baseBPM * tempo
+            metronome.playsSound = metronomeSound
         }
         .onDisappear {
             session.saveProgress()
             session.stopListening()
+            session.stopPiece()
+            metronome.stop()
             SoundEngine.shared.stop()
+        }
+        .onChange(of: tempo) { _, t in
+            metronome.bpm = baseBPM * t
+            if session.isPlayingPiece { playPiece() }
+        }
+        .onChange(of: metronome.playsSound) { _, v in metronomeSound = v }
+        .onChange(of: session.isPlayingPiece) { _, playing in
+            // While the piece plays the metronome rides its beat grid; afterwards it ticks on its own again.
+            guard metronome.isRunning else { return }
+            if playing { metronome.follow(session.score.beats) { SoundEngine.shared.position } } else { metronome.start() }
         }
         .onChange(of: micSensitivity) { _, v in session.sensitivity = v }
         .onChange(of: ignoreOctave) { _, v in session.ignoreOctave = v }
@@ -81,6 +102,7 @@ struct PracticeView: View {
                 Toggle("Ignorer la voix et les bruits", isOn: $pianoOnly)
                 Toggle("Jouer automatiquement chaque nouvelle note", isOn: $session.autoPlayTarget)
                 Toggle("Afficher le nom des notes", isOn: $showNoteNames)
+                Toggle("« Écouter le morceau » : seulement la main travaillée", isOn: $playOnlyPracticedHands)
                 if pdfURL != nil { Toggle("Afficher la partition PDF", isOn: $showPDF) }
                 Divider()
                 InputDevicePicker()
@@ -129,9 +151,35 @@ struct PracticeView: View {
 
     // MARK: - Lesson panel
 
+    /// The piece's own tempo, in beats per minute.
+    private var baseBPM: Double { session.score.initialBPM ?? 100 }
+
+    private var metronomeBPM: Binding<Double> {
+        Binding(get: { baseBPM * tempo },
+                set: { tempo = min(2, max(0.25, $0 / baseBPM)) })
+    }
+
+    private func playPiece() {
+        session.playPiece(onlyPracticedHands: playOnlyPracticedHands, tempo: tempo)
+    }
+
+    private func toggleMetronome() {
+        if metronome.isRunning {
+            metronome.stop()
+        } else if session.isPlayingPiece {
+            metronome.follow(session.score.beats) { SoundEngine.shared.position }
+        } else {
+            metronome.start()
+        }
+    }
+
     private var lessonPanel: some View {
         VStack(spacing: 16) {
             targetCard
+            if metronome.isRunning {
+                MetronomeView(metronome: metronome, bpm: metronomeBPM, followsPiece: session.isPlayingPiece)
+                    .transition(.opacity)
+            }
             StaffView(columns: staffColumns, showNames: showNoteNames, wrongNote: wrongNote)
                 .frame(minHeight: 220, maxHeight: 320)
                 .padding(.horizontal)
@@ -157,7 +205,7 @@ struct PracticeView: View {
             }
         }()
         return VStack(spacing: 6) {
-            Text(session.steps.isEmpty ? "Aucune note pour cette main" : "Jouez")
+            Text(session.steps.isEmpty ? "Aucune note pour cette main" : session.isPlayingPiece ? "Écoutez" : "Jouez")
                 .font(.caption).foregroundStyle(.secondary).textCase(.uppercase)
             if let step {
                 HStack(spacing: 18) {
@@ -178,7 +226,8 @@ struct PracticeView: View {
             case .correct:
                 Text("Bravo !").font(.callout.bold()).foregroundStyle(.green)
             case .none:
-                Text(session.isListening ? "Le micro écoute… jouez la note sur votre piano" : " ")
+                Text(session.isPlayingPiece ? "Le morceau est joué dans son rythme : suivez les notes sur la portée"
+                     : session.isListening ? "Le micro écoute… jouez la note sur votre piano" : " ")
                     .font(.callout).foregroundStyle(.secondary)
             }
         }
@@ -230,6 +279,33 @@ struct PracticeView: View {
                 .help("Passer cette note (→)")
             Button { session.restart() } label: { Label("Recommencer", systemImage: "arrow.counterclockwise") }
 
+            Divider().frame(height: 20)
+            if session.isPlayingPiece {
+                Button { session.stopPiece() } label: { Label("Arrêter", systemImage: "stop.fill") }
+                    .keyboardShortcut("p", modifiers: [])
+                    .help("Arrêter l'écoute et revenir à la note de départ (P)")
+            } else {
+                Button { playPiece() } label: { Label("Écouter le morceau", systemImage: "play.fill") }
+                    .keyboardShortcut("p", modifiers: [])
+                    .help("Jouer le morceau dans son rythme à partir de la note actuelle, ou le passage en boucle (P). La portée et le clavier suivent.")
+            }
+            Picker("Tempo", selection: $tempo) {
+                ForEach([0.4, 0.5, 0.6, 0.75, 0.9, 1.0, 1.1, 1.25], id: \.self) { t in
+                    Text("\(Int((t * 100).rounded())) %").tag(t)
+                }
+                if ![0.4, 0.5, 0.6, 0.75, 0.9, 1.0, 1.1, 1.25].contains(tempo) {
+                    Text("\(Int((tempo * 100).rounded())) %").tag(tempo)
+                }
+            }
+            .fixedSize()
+            .help("Vitesse de l'écoute et du métronome (100 % = tempo du morceau)")
+            Toggle(isOn: Binding(get: { metronome.isRunning }, set: { _ in toggleMetronome() })) {
+                Label("Métronome", systemImage: "metronome.fill")
+            }
+            .toggleStyle(.button)
+            .keyboardShortcut("m", modifiers: [])
+            .help("Métronome avec balancier animé (M). Il bat la mesure du morceau.")
+
             Slider(value: Binding(get: { Double(session.index) },
                                   set: { session.jump(to: Int($0)) }),
                    in: 0...Double(max(session.steps.count - 1, 1)))
@@ -260,7 +336,10 @@ struct PracticeView: View {
     private var keyboard: some View {
         var highlights: [Int: Color] = [:]
         var labels: [Int: String] = [:]
-        if let step = session.currentStep {
+        if session.isPlayingPiece {
+            // Keys light up as the piece plays.
+            for p in sound.activeNotes { highlights[p] = Color.accentColor.opacity(0.75) }
+        } else if let step = session.currentStep {
             for p in step.pitches {
                 highlights[p] = (step.hands[p] == .left ? Color.green : Color.accentColor).opacity(0.75)
                 if showNoteNames { labels[p] = p.noteLabel }

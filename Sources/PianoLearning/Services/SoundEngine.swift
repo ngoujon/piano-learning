@@ -19,6 +19,8 @@ final class SoundEngine: ObservableObject {
 
     private let engine = AVAudioEngine()
     private let sampler = AVAudioUnitSampler()
+    /// GM percussion kit, for the metronome.
+    private let clicks = AVAudioUnitSampler()
     private var started = false
 
     private var timer: Timer?
@@ -32,6 +34,8 @@ final class SoundEngine: ObservableObject {
     private init() {
         engine.attach(sampler)
         engine.connect(sampler, to: engine.mainMixerNode, format: nil)
+        engine.attach(clicks)
+        engine.connect(clicks, to: engine.mainMixerNode, format: nil)
         loadPiano()
     }
 
@@ -44,6 +48,9 @@ final class SoundEngine: ObservableObject {
             do {
                 try sampler.loadSoundBankInstrument(at: URL(fileURLWithPath: path), program: 0,
                                                     bankMSB: UInt8(kAUSampler_DefaultMelodicBankMSB),
+                                                    bankLSB: UInt8(kAUSampler_DefaultBankLSB))
+                try? clicks.loadSoundBankInstrument(at: URL(fileURLWithPath: path), program: 0,
+                                                    bankMSB: UInt8(kAUSampler_DefaultPercussionBankMSB),
                                                     bankLSB: UInt8(kAUSampler_DefaultBankLSB))
                 return
             } catch {
@@ -83,27 +90,37 @@ final class SoundEngine: ObservableObject {
         }
     }
 
-    /// Short confirmation "click" sounds are avoided on purpose: they would leak into the microphone.
+    /// Metronome tick: high wood block on the downbeat, low wood block otherwise.
+    /// Confirmation sounds are avoided on purpose (they would leak into the microphone); the metronome
+    /// only pauses the microphone for the length of the tick.
+    func click(accent: Bool) {
+        ensureStarted()
+        let note: UInt8 = accent ? 76 : 77
+        clicks.startNote(note, withVelocity: accent ? 120 : 95, onChannel: 9)
+        onSoundProduced?(0.12)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in self?.clicks.stopNote(note, onChannel: 9) }
+    }
 
     // MARK: - Score playback
 
     func isPlaying(id: String) -> Bool { isPlaying && playingID == id }
 
-    func play(score: Score, id: String, hands: HandSelection = .both, from start: Double = 0, tempo: Double = 1.0) {
+    /// Plays the score in its own rhythm from `start`, stopping at `end` when given (a looped passage).
+    func play(score: Score, id: String, hands: HandSelection = .both, from start: Double = 0, to end: Double? = nil, tempo: Double = 1.0) {
         stop()
         ensureStarted()
         let handOf = PracticeSequence.handAssignment(for: score)
         var evts: [(Double, Int, Bool, Int)] = []
         for n in score.notes where hands == .both || (hands == .right) == (handOf(n) == .right) {
-            guard n.end > start else { continue }
+            guard n.end > start, n.start < (end ?? .infinity) else { continue }
             evts.append((n.start, n.pitch, true, n.velocity))
-            evts.append((n.end, n.pitch, false, 0))
+            evts.append((min(n.end, end ?? .infinity), n.pitch, false, 0))
         }
         // Note-offs before note-ons at identical times so repeated notes re-trigger.
         events = evts.sorted { $0.0 != $1.0 ? $0.0 < $1.0 : (!$0.2 && $1.2) }
             .map { (time: $0.0, pitch: $0.1, on: $0.2, velocity: $0.3) }
         nextEvent = events.firstIndex { $0.time >= start } ?? events.count
-        duration = score.duration
+        duration = end ?? score.duration
         startOffset = start
         self.tempo = tempo
         playStart = Date()
