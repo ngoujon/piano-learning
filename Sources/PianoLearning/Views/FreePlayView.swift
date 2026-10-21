@@ -28,17 +28,23 @@ struct FreePlayView: View {
                 }
                 .frame(maxWidth: 360)
                 Spacer()
-                InputDevicePicker().frame(maxWidth: 280)
-                switch mic.state {
-                case .running:
-                    Label(mic.deviceName, systemImage: "mic.fill").foregroundStyle(.green)
-                    LevelMeter(level: mic.level).frame(width: 80, height: 8)
-                case .denied:
-                    Button("Autoriser l'accès au micro") {
-                        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!)
+                if midi.isKeyboardConnected {
+                    Label("Clavier USB : \(midi.sources.joined(separator: ", "))", systemImage: "pianokeys")
+                        .foregroundStyle(.blue)
+                        .help("Les touches sont lues directement par le câble, le micro n'est pas utilisé.")
+                } else {
+                    InputDevicePicker().frame(maxWidth: 280)
+                    switch mic.state {
+                    case .running:
+                        Label(mic.deviceName, systemImage: "mic.fill").foregroundStyle(.green)
+                        LevelMeter(level: mic.level).frame(width: 80, height: 8)
+                    case .denied:
+                        Button("Autoriser l'accès au micro") {
+                            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!)
+                        }
+                    default:
+                        ProgressView().controlSize(.small)
                     }
-                default:
-                    ProgressView().controlSize(.small)
                 }
             }
             .padding()
@@ -96,6 +102,7 @@ struct FreePlayView: View {
     }
 
     private func handle(_ frame: AnalysisFrame) {
+        guard !midi.isKeyboardConnected else { return }
         let verdict = matcher.process(frame)
         guard verdict != .silence, matcher.isPianoTone else {
             detected = []

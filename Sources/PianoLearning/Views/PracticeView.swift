@@ -125,27 +125,33 @@ struct PracticeView: View {
 
     private var micIndicator: some View {
         HStack(spacing: 6) {
-            switch mic.state {
-            case .running:
-                Image(systemName: mic.isSuppressed ? "speaker.wave.2.fill" : "mic.fill")
-                    .foregroundStyle(mic.isSuppressed ? Color.secondary : Color.green)
-                    .help(mic.isSuppressed ? "Micro en pause pendant que l'application joue" : "Micro actif : \(mic.deviceName)")
-                LevelMeter(level: mic.level).frame(width: 50, height: 8)
-            case .denied:
-                Button {
-                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!)
-                } label: {
-                    Label("Autoriser le micro", systemImage: "mic.slash.fill")
-                }
-                .foregroundStyle(.red)
-            case .failed(let e):
-                Label(e, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange).font(.caption)
-            default:
-                ProgressView().controlSize(.small)
+            if midi.isKeyboardConnected {
+                Label("Clavier USB", systemImage: "pianokeys").foregroundStyle(.blue)
+                    .help("\(midi.sources.joined(separator: ", ")) : les touches sont lues par le câble, le micro n'est pas utilisé.")
+            } else {
+                microphoneStatus
             }
-            if !midi.sources.isEmpty {
-                Image(systemName: "pianokeys").foregroundStyle(.blue).help("Clavier MIDI : \(midi.sources.joined(separator: ", "))")
+        }
+    }
+
+    @ViewBuilder private var microphoneStatus: some View {
+        switch mic.state {
+        case .running:
+            Image(systemName: mic.isSuppressed ? "speaker.wave.2.fill" : "mic.fill")
+                .foregroundStyle(mic.isSuppressed ? Color.secondary : Color.green)
+                .help(mic.isSuppressed ? "Micro en pause pendant que l'application joue" : "Micro actif : \(mic.deviceName)")
+            LevelMeter(level: mic.level).frame(width: 50, height: 8)
+        case .denied:
+            Button {
+                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!)
+            } label: {
+                Label("Autoriser le micro", systemImage: "mic.slash.fill")
             }
+            .foregroundStyle(.red)
+        case .failed(let e):
+            Label(e, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange).font(.caption)
+        default:
+            ProgressView().controlSize(.small)
         }
     }
 

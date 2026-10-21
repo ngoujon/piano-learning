@@ -19,7 +19,7 @@ Get [`exports/Piano-Learning-1.1-macOS.zip`](exports/Piano-Learning-1.1-macOS.zi
 
 ## Features
 
-- **Online catalogue**: every free score from [partition-piano-gratuite.fr](https://www.partition-piano-gratuite.fr/), plus about forty classical pieces from the [Mutopia Project](https://www.mutopiaproject.org/) and [Wikimedia Commons](https://commons.wikimedia.org/) (Chopin, Schumann, Grieg, Bach, Mozart, Beethoven, Schubert…), with level, composer and source filters and search. The classical list is built into the app (`ClassicsCatalog.swift`) and only holds public-domain or freely licensed editions; files are downloaded from their source when you add a piece, and each entry credits its edition and licence. You can play the MP3 preview, view the PDF, and add a piece to your collection in one click (this downloads the PDF and the MIDI file).
+- **Online catalogue**: every free score from [partition-piano-gratuite.fr](https://www.partition-piano-gratuite.fr/), plus about forty classical pieces from the [Mutopia Project](https://www.mutopiaproject.org/) and [Wikimedia Commons](https://commons.wikimedia.org/) (Chopin, Schumann, Grieg, Bach, Mozart, Beethoven, Schubert…), with level, composer and source filters and search. The classical list is built into the app (`ClassicsCatalog.swift`) and only holds public-domain or freely licensed editions; files are downloaded from their source when you add a piece, and each entry credits its edition and licence. You can play a preview (the MP3, or the MIDI file on the built-in piano for pieces without one), view the PDF, and add a piece to your collection in one click (this downloads the PDF and the MIDI file).
 
   ![Online catalogue](docs/screenshots/catalog.png)
 
@@ -35,7 +35,7 @@ Get [`exports/Piano-Learning-1.1-macOS.zip`](exports/Piano-Learning-1.1-macOS.zi
   - "any octave" option, microphone sensitivity and microphone choice
   - the PDF score is shown next to the lesson
   - the on-screen keyboard always shows all 88 keys, like a real piano, so it never shifts while you play
-  - USB/Bluetooth MIDI keyboards are supported, with exact detection
+  - USB/Bluetooth MIDI keyboards (digital pianos such as the Alesis Recital) are supported, with exact detection: plug in the cable and the app reads the keys directly, the microphone is then ignored
 - **Learn from a PDF alone**: optical music recognition with [Audiveris](https://audiveris.github.io), a free tool you can install from the app in one click. Results are reliable on simple scores and approximate on dense ones.
 - **Listen to a piece**: MIDI piano playback at 50/75/100 % speed, with the keys lighting up.
 - **Free play**: the microphone shows the note you're playing (with tuning) while you read a score.

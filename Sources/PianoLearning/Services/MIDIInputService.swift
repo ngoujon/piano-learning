@@ -6,8 +6,12 @@ import Foundation
 final class MIDIInputService: ObservableObject {
     static let shared = MIDIInputService()
 
+    /// Connected keyboards (USB or Bluetooth), by name. Virtual ports (IAC, network sessions) are not listed.
     @Published private(set) var sources: [String] = []
     @Published private(set) var heldKeys: Set<Int> = []
+
+    /// A keyboard sends exact notes: the microphone is then not used to check what was played.
+    var isKeyboardConnected: Bool { !sources.isEmpty }
 
     /// (pitch, isNoteOn)
     var onNote: ((Int, Bool) -> Void)?
@@ -32,12 +36,26 @@ final class MIDIInputService: ObservableObject {
         for i in 0..<MIDIGetNumberOfSources() {
             let src = MIDIGetSource(i)
             MIDIPortConnectSource(port, src, nil)
+            guard !Self.isVirtual(src) else { continue }
             var name: Unmanaged<CFString>?
             if MIDIObjectGetStringProperty(src, kMIDIPropertyDisplayName, &name) == noErr, let n = name?.takeRetainedValue() {
                 names.append(n as String)
             }
         }
         sources = names
+    }
+
+    /// Sources created by software (IAC bus, network session, other apps) rather than a plugged-in keyboard.
+    private static func isVirtual(_ src: MIDIEndpointRef) -> Bool {
+        var offline: Int32 = 0
+        if MIDIObjectGetIntegerProperty(src, kMIDIPropertyOffline, &offline) == noErr, offline != 0 { return true }
+        var entity = MIDIEntityRef()
+        var device = MIDIDeviceRef()
+        guard MIDIEndpointGetEntity(src, &entity) == noErr, MIDIEntityGetDevice(entity, &device) == noErr else { return true }
+        var driver: Unmanaged<CFString>?
+        guard MIDIObjectGetStringProperty(device, kMIDIPropertyDriverOwner, &driver) == noErr,
+              let owner = driver?.takeRetainedValue() as String? else { return false }
+        return owner.contains("IAC") || owner.contains("RTP") || owner.contains("NetworkMIDI")
     }
 
     private func handle(_ notes: [(Int, Bool)]) {

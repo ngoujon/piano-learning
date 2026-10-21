@@ -245,6 +245,8 @@ final class PracticeSession: ObservableObject {
     // MARK: - Input handling
 
     private func handle(_ frame: AnalysisFrame) {
+        // A plugged-in keyboard gives exact notes; the microphone would only hear its speakers.
+        guard !MIDIInputService.shared.isKeyboardConnected else { return }
         let verdict = matcher.process(frame)
         // Display what the microphone hears (piano notes only, not voices or noise).
         if verdict != .silence, matcher.isPianoTone {
