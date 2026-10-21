@@ -65,6 +65,8 @@ struct PianoLearningApp: App {
         let store = LibraryStore()
         _library = StateObject(wrappedValue: store)
         _catalog = StateObject(wrappedValue: CatalogService(cacheDirectory: store.rootURL))
+        // Listen to a plugged-in keyboard from launch, so it sounds on every screen.
+        _ = MIDIInputService.shared
     }
 
     var body: some Scene {
@@ -160,6 +162,7 @@ struct SettingsView: View {
     @AppStorage("ignoreOctave") private var ignoreOctave = false
     @AppStorage("showNoteNames") private var showNoteNames = true
     @AppStorage("pianoOnly") private var pianoOnly = true
+    @AppStorage("midiPlayback") private var midiPlayback = true
 
     var body: some View {
         Form {
@@ -176,7 +179,12 @@ struct SettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             VStack(alignment: .leading) {
-                Text("Seuil du micro : \(micSensitivity, specifier: "%.1f")")
+                Toggle("Jouer sur le Mac les notes d'un piano branché en USB", isOn: $midiPlayback)
+                Text("Le câble USB transmet les touches, pas le son. Baissez le volume du piano pour ne pas entendre deux fois chaque note.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            VStack(alignment: .leading) {
+                Text("Seuil du micro :\(micSensitivity, specifier: "%.1f")")
                 Slider(value: $micSensitivity, in: 0.4...2.5) {
                     EmptyView()
                 } minimumValueLabel: { Text("Sensible") } maximumValueLabel: { Text("Strict") }

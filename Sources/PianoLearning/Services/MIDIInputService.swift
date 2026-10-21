@@ -16,6 +16,7 @@ final class MIDIInputService: ObservableObject {
     /// (pitch, isNoteOn)
     var onNote: ((Int, Bool) -> Void)?
 
+    private let debugLog = ProcessInfo.processInfo.environment["PIANO_DEBUG"] != nil
     private var client = MIDIClientRef()
     private var port = MIDIPortRef()
 
@@ -58,11 +59,33 @@ final class MIDIInputService: ObservableObject {
         return owner.contains("IAC") || owner.contains("RTP") || owner.contains("NetworkMIDI")
     }
 
-    private func handle(_ notes: [(Int, Bool)]) {
-        for (pitch, on) in notes {
-            if on { heldKeys.insert(pitch) } else { heldKeys.remove(pitch) }
-            onNote?(pitch, on)
+    /// Plays what the keyboard sends on the Mac's speakers (the USB cable carries notes, not sound).
+    private var playsThroughMac: Bool {
+        UserDefaults.standard.object(forKey: "midiPlayback") as? Bool ?? true
+    }
+
+    private func handle(_ events: [Event]) {
+        let sound = SoundEngine.shared
+        for event in events {
+            switch event {
+            case .note(let pitch, let velocity):
+                let on = velocity > 0
+                if debugLog { FileHandle.standardError.write("midi note=\(pitch) velocity=\(velocity)\n".data(using: .utf8)!) }
+                if on { heldKeys.insert(pitch) } else { heldKeys.remove(pitch) }
+                if playsThroughMac {
+                    if on { sound.keyboardNoteOn(pitch, velocity: velocity) } else { sound.keyboardNoteOff(pitch) }
+                }
+                onNote?(pitch, on)
+            case .sustain(let value):
+                if playsThroughMac { sound.keyboardSustain(value) }
+            }
         }
+    }
+
+    /// Note on/off (velocity 0 = released) or sustain pedal position.
+    enum Event: Sendable {
+        case note(Int, velocity: Int)
+        case sustain(Int)
     }
 
     // Blocks are built outside the main actor: CoreMIDI calls them on its own thread.
@@ -70,15 +93,15 @@ final class MIDIInputService: ObservableObject {
         return { _ in changed() }
     }
 
-    nonisolated private static func makeReceiveBlock(_ handler: @escaping @Sendable ([(Int, Bool)]) -> Void) -> MIDIReceiveBlock {
+    nonisolated private static func makeReceiveBlock(_ handler: @escaping @Sendable ([Event]) -> Void) -> MIDIReceiveBlock {
         return { eventList, _ in
-            let notes = decode(eventList)
-            if !notes.isEmpty { handler(notes) }
+            let events = decode(eventList)
+            if !events.isEmpty { handler(events) }
         }
     }
 
-    nonisolated private static func decode(_ list: UnsafePointer<MIDIEventList>) -> [(Int, Bool)] {
-        var result: [(Int, Bool)] = []
+    nonisolated private static func decode(_ list: UnsafePointer<MIDIEventList>) -> [Event] {
+        var result: [Event] = []
         withUnsafePointer(to: list.pointee.packet) { first in
             var packet = first
             for _ in 0..<list.pointee.numPackets {
@@ -87,10 +110,11 @@ final class MIDIInputService: ObservableObject {
                     // MIDI 1.0 channel voice message in a Universal MIDI Packet (type 2).
                     guard w >> 28 == 0x2 else { continue }
                     let status = (w >> 16) & 0xF0
-                    let note = Int((w >> 8) & 0x7F)
-                    let velocity = w & 0x7F
-                    if status == 0x90 && velocity > 0 { result.append((note, true)) }
-                    else if status == 0x80 || (status == 0x90 && velocity == 0) { result.append((note, false)) }
+                    let data1 = Int((w >> 8) & 0x7F)
+                    let data2 = Int(w & 0x7F)
+                    if status == 0x90 { result.append(.note(data1, velocity: data2)) }
+                    else if status == 0x80 { result.append(.note(data1, velocity: 0)) }
+                    else if status == 0xB0 && data1 == 64 { result.append(.sustain(data2)) }
                 }
                 packet = UnsafePointer(MIDIEventPacketNext(packet))
             }

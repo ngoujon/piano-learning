@@ -21,6 +21,8 @@ final class SoundEngine: ObservableObject {
     private let sampler = AVAudioUnitSampler()
     /// GM percussion kit, for the metronome.
     private let clicks = AVAudioUnitSampler()
+    /// Piano voice for a plugged-in keyboard.
+    private let keyboard = AVAudioUnitSampler()
     private var started = false
 
     private var timer: Timer?
@@ -36,6 +38,8 @@ final class SoundEngine: ObservableObject {
         engine.connect(sampler, to: engine.mainMixerNode, format: nil)
         engine.attach(clicks)
         engine.connect(clicks, to: engine.mainMixerNode, format: nil)
+        engine.attach(keyboard)
+        engine.connect(keyboard, to: engine.mainMixerNode, format: nil)
         loadPiano()
     }
 
@@ -49,6 +53,9 @@ final class SoundEngine: ObservableObject {
                 try sampler.loadSoundBankInstrument(at: URL(fileURLWithPath: path), program: 0,
                                                     bankMSB: UInt8(kAUSampler_DefaultMelodicBankMSB),
                                                     bankLSB: UInt8(kAUSampler_DefaultBankLSB))
+                try? keyboard.loadSoundBankInstrument(at: URL(fileURLWithPath: path), program: 0,
+                                                      bankMSB: UInt8(kAUSampler_DefaultMelodicBankMSB),
+                                                      bankLSB: UInt8(kAUSampler_DefaultBankLSB))
                 try? clicks.loadSoundBankInstrument(at: URL(fileURLWithPath: path), program: 0,
                                                     bankMSB: UInt8(kAUSampler_DefaultPercussionBankMSB),
                                                     bankLSB: UInt8(kAUSampler_DefaultBankLSB))
@@ -79,6 +86,27 @@ final class SoundEngine: ObservableObject {
 
     func noteOff(_ pitch: Int) {
         sampler.stopNote(UInt8(pitch), onChannel: 0)
+    }
+
+    // MARK: - Plugged-in keyboard
+
+    // Notes from a USB keyboard use their own sampler, so score playback, its "all notes off"
+    // and the keyboard's sustain pedal do not interfere with each other.
+
+    func keyboardNoteOn(_ pitch: Int, velocity: Int) {
+        ensureStarted()
+        keyboard.startNote(UInt8(pitch), withVelocity: UInt8(max(1, min(127, velocity))), onChannel: 0)
+        onSoundProduced?(1.2)
+    }
+
+    func keyboardNoteOff(_ pitch: Int) {
+        keyboard.stopNote(UInt8(pitch), onChannel: 0)
+    }
+
+    /// Sustain pedal (0 = up, 127 = down).
+    func keyboardSustain(_ value: Int) {
+        ensureStarted()
+        keyboard.sendController(64, withValue: UInt8(max(0, min(127, value))), onChannel: 0)
     }
 
     /// Plays notes together for a given duration (used for "listen to the next note").
