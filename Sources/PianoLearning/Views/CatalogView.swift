@@ -44,9 +44,10 @@ struct CatalogView: View {
                     CatalogRow(entry: entry,
                                inLibrary: library.contains(catalogID: entry.id),
                                isDownloading: library.downloading.contains(entry.id),
-                               isPreviewing: preview.playingURL == entry.previewURL && entry.previewURL != nil,
+                               isPreviewing: preview.playingEntryID == entry.id,
+                               isBuffering: preview.isBuffering,
                                previewProgress: preview.progress,
-                               onPreview: { if let u = entry.previewURL { preview.toggle(u) } },
+                               onPreview: { preview.toggle(entry) { errorMessage = $0 } },
                                onShowPDF: { pdfPreview = entry },
                                onAdd: { add(entry, thenLearn: false) },
                                onLearn: { add(entry, thenLearn: true) })
@@ -160,6 +161,7 @@ private struct CatalogRow: View {
     let inLibrary: Bool
     let isDownloading: Bool
     let isPreviewing: Bool
+    let isBuffering: Bool
     let previewProgress: Double
     let onPreview: () -> Void
     let onShowPDF: () -> Void
@@ -177,15 +179,19 @@ private struct CatalogRow: View {
                     Text(entry.info).font(.caption).foregroundStyle(.tertiary).lineLimit(2)
                 }
                 if isPreviewing {
-                    ProgressView(value: previewProgress).frame(maxWidth: 240)
+                    if isBuffering {
+                        ProgressView().progressViewStyle(.linear).frame(maxWidth: 240)
+                    } else {
+                        ProgressView(value: previewProgress).frame(maxWidth: 240)
+                    }
                 }
             }
             Spacer()
-            if entry.previewURL != nil {
+            if entry.previewURL != nil || entry.midiURL != nil {
                 Button(action: onPreview) {
                     Label(isPreviewing ? "Stop" : "Écouter", systemImage: isPreviewing ? "stop.fill" : "play.fill")
                 }
-                .help("Écouter l'aperçu audio")
+                .help(entry.previewURL != nil ? "Écouter l'aperçu audio" : "Écouter le morceau au piano (fichier MIDI)")
             }
             if entry.pdfURL != nil {
                 Button(action: onShowPDF) { Label("Partition", systemImage: "doc.richtext") }

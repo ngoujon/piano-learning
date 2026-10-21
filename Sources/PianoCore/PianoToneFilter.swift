@@ -14,6 +14,8 @@ public struct PianoToneFilter {
     public var maxFade: Float = 0.7
     /// Largest pitch spread, in semitones, allowed across the window.
     public var maxPitchSpread = 0.15
+    /// From this MIDI note up (C5), the loudness envelope is not checked.
+    public var trebleFrom = 72.0
 
     private var rms: [Float] = []
     private var pitches: [Double?] = []
@@ -31,6 +33,15 @@ public struct PianoToneFilter {
         rms.append(frame.rms)
         pitches.append(frame.pitchConfidence > 0.6 ? frame.pitch.map { NoteName.midi(forFrequency: $0) } : nil)
         if rms.count > window { rms.removeFirst(); pitches.removeFirst() }
+
+        // Treble strings fade very fast right after the hammer, then their unison strings beat,
+        // so their envelope jumps around, and the highest ones only ring for a few frames.
+        // No voice speaks that high: two frames with the same steady pitch are enough.
+        let recent = pitches.suffix(2).compactMap { $0 }
+        if recent.count == 2, let lo = recent.min(), let hi = recent.max(),
+           lo >= trebleFrom - 0.5, hi - lo <= maxPitchSpread {
+            return true
+        }
         guard rms.count == window else { return false }
 
         // Envelope: after the attack a piano note only decays.

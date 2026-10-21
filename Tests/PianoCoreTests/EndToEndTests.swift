@@ -126,6 +126,16 @@ import Testing
         #expect(simulate(audio: audio, steps: steps).completed == steps.count)
     }
 
+    @Test(arguments: [44_100.0, 48_000.0])
+    func highTrebleNotes(sampleRate: Double) throws {
+        // From G5 up to C8: short, quickly decaying strings with few harmonics.
+        let steps = Array(79...108).map { [$0] }
+        let audio = try render(steps, interval: 0.6, sampleRate: sampleRate)
+        let result = simulate(audio: audio, steps: steps, sampleRate: sampleRate, noise: 0.002)
+        #expect(result.completed == steps.count, "validated \(result.completed)/\(steps.count)")
+        #expect(result.wrong == 0)
+    }
+
     @Test func furEliseBothHandsLegato() throws {
         let score = try MIDIFileParser.parse(url: try #require(Bundle.module.url(forResource: "elise", withExtension: "mid", subdirectory: "Fixtures")))
         let steps = PracticeSequence.build(score: score, options: PracticeOptions(hands: .both, melodyOnly: true))

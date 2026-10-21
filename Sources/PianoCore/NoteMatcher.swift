@@ -83,7 +83,10 @@ public struct NoteMatcher {
         if frame.rms < noiseFloor { noiseFloor = max(0.0005, noiseFloor * 0.9 + frame.rms * 0.1) }
         else if frame.rms < gate { noiseFloor = noiseFloor * 0.995 + frame.rms * 0.005 }
 
-        guard frame.rms > gate else {
+        // Treble notes lose most of their loudness right after the hammer. A clean, confident
+        // high pitch is far above the noise (noise is not periodic), so a lower gate is safe.
+        let clearTreble = (frame.midiPitch ?? 0) >= 72 && frame.pitchConfidence > 0.9
+        guard frame.rms > (clearTreble ? gate * 0.5 : gate) else {
             hits = 0
             wrongCandidate = nil
             wrongFrames = 0

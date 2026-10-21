@@ -164,18 +164,76 @@ final class SoundEngine: ObservableObject {
     }
 }
 
-/// Streams the MP3 previews hosted on partition-piano-gratuite.fr.
+/// Streams the MP3 previews hosted on partition-piano-gratuite.fr, or plays a catalogue
+/// entry's MIDI file on the built-in piano when it has no MP3 (the bundled classics).
 @MainActor
 final class PreviewPlayer: ObservableObject {
     static let shared = PreviewPlayer()
 
     @Published private(set) var playingURL: URL?
+    /// Catalogue entry being previewed (MP3 or MIDI).
+    @Published private(set) var playingEntryID: String?
     @Published private(set) var isBuffering = false
     @Published private(set) var progress: Double = 0
 
     private var player: AVPlayer?
     private var observer: Any?
     private var endObserver: NSObjectProtocol?
+
+    private static let midiPlaybackID = "catalog-preview"
+    private var midiTask: Task<Void, Never>?
+    private var midiTimer: Timer?
+    private var midiScores: [URL: Score] = [:]
+
+    /// Starts or stops the preview of a catalogue entry. `onError` is called if its MIDI file cannot be loaded.
+    func toggle(_ entry: CatalogEntry, onError: @escaping (String) -> Void = { _ in }) {
+        if playingEntryID == entry.id { stop(); return }
+        if let url = entry.previewURL {
+            toggle(url)
+            playingEntryID = entry.id
+            return
+        }
+        guard let midi = entry.midiURL else { return }
+        stop()
+        SoundEngine.shared.stop()
+        playingEntryID = entry.id
+        isBuffering = true
+        midiTask = Task { [weak self] in
+            do {
+                let score = try await self?.score(at: midi)
+                guard let self, let score, !Task.isCancelled, self.playingEntryID == entry.id else { return }
+                self.isBuffering = false
+                SoundEngine.shared.play(score: score, id: Self.midiPlaybackID)
+                self.midiTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.followMIDI() }
+                }
+            } catch {
+                guard let self, !Task.isCancelled, self.playingEntryID == entry.id else { return }
+                self.stop()
+                onError("Aperçu indisponible : \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func score(at url: URL) async throws -> Score {
+        if let cached = midiScores[url] { return cached }
+        var request = URLRequest(url: url)
+        request.setValue("PianoLearning/1.0 (macOS)", forHTTPHeaderField: "User-Agent")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            throw URLError(.badServerResponse)
+        }
+        let score = try MIDIFileParser.parse(data: data)
+        midiScores[url] = score
+        return score
+    }
+
+    private func followMIDI() {
+        let sound = SoundEngine.shared
+        // Finished, or replaced by another playback.
+        guard sound.isPlaying(id: Self.midiPlaybackID) else { stop(); return }
+        if sound.duration > 0 { progress = min(1, sound.position / sound.duration) }
+    }
 
     func toggle(_ url: URL) {
         if playingURL == url { stop(); return }
@@ -208,6 +266,12 @@ final class PreviewPlayer: ObservableObject {
         player?.pause()
         player = nil
         playingURL = nil
+        midiTask?.cancel()
+        midiTask = nil
+        midiTimer?.invalidate()
+        midiTimer = nil
+        if SoundEngine.shared.isPlaying(id: Self.midiPlaybackID) { SoundEngine.shared.stop() }
+        playingEntryID = nil
         progress = 0
         isBuffering = false
     }
