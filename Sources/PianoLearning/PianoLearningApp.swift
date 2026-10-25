@@ -163,12 +163,21 @@ struct SettingsView: View {
     @AppStorage("showNoteNames") private var showNoteNames = true
     @AppStorage("pianoOnly") private var pianoOnly = true
     @AppStorage("midiPlayback") private var midiPlayback = true
+    @ObservedObject private var midi = MIDIInputService.shared
 
     var body: some View {
         Form {
             Picker("Nom des notes", selection: $noteNaming) {
                 Text("Do, Ré, Mi…").tag("fr")
                 Text("C, D, E…").tag("en")
+            }
+            VStack(alignment: .leading) {
+                Picker("Détection des notes", selection: Binding(get: { midi.mode }, set: { midi.mode = $0 })) {
+                    Text("Au micro (son du piano)").tag(MIDIInputService.InputMode.microphone)
+                    Text("Par le câble USB").tag(MIDIInputService.InputMode.keyboard)
+                }
+                Text("Se change aussi pendant une leçon (bouton Micro / USB, ou ⌘U).")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             InputDevicePicker()
             Toggle("Afficher le nom des notes pendant l'apprentissage", isOn: $showNoteNames)

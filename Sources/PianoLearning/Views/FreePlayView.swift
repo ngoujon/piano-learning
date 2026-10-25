@@ -28,10 +28,13 @@ struct FreePlayView: View {
                 }
                 .frame(maxWidth: 360)
                 Spacer()
-                if midi.isKeyboardConnected {
-                    Label("Clavier USB : \(midi.sources.joined(separator: ", "))", systemImage: "pianokeys")
-                        .foregroundStyle(.blue)
-                        .help("Les touches sont lues directement par le câble, le micro n'est pas utilisé.")
+                InputModePicker()
+                if midi.usesKeyboard {
+                    if midi.isKeyboardConnected {
+                        Label(midi.sources.joined(separator: ", "), systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.blue)
+                            .help("Les touches sont lues directement par le câble, le micro n'est pas utilisé.")
+                    }
                 } else {
                     InputDevicePicker().frame(maxWidth: 280)
                     switch mic.state {
@@ -89,10 +92,16 @@ struct FreePlayView: View {
             matcher.pianoOnly = pianoOnly
             let mic = MicrophoneListener.shared
             mic.onFrame = { frame in handle(frame) }
-            mic.start()
+            if !midi.usesKeyboard { mic.start() }
             MIDIInputService.shared.onNote = { pitch, on in
-                if on { label = pitch.noteLabel; history.append(pitch) }
+                if on, MIDIInputService.shared.usesKeyboard { label = pitch.noteLabel; history.append(pitch) }
             }
+        }
+        .onChange(of: midi.mode) { _, _ in
+            detected = []
+            label = nil
+            cents = nil
+            if midi.usesKeyboard { MicrophoneListener.shared.stop() } else { MicrophoneListener.shared.start() }
         }
         .onDisappear {
             MicrophoneListener.shared.onFrame = nil
@@ -102,7 +111,7 @@ struct FreePlayView: View {
     }
 
     private func handle(_ frame: AnalysisFrame) {
-        guard !midi.isKeyboardConnected else { return }
+        guard !midi.usesKeyboard else { return }
         let verdict = matcher.process(frame)
         guard verdict != .silence, matcher.isPianoTone else {
             detected = []

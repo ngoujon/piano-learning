@@ -61,6 +61,11 @@ struct KeyboardView: View {
         }
     }
 
+    /// Lights the sounding notes of a played score in their hand's colour, marked D / G.
+    static func playing(_ notes: [Int: Hand]) -> (highlights: [Int: Color], labels: [Int: String]) {
+        (notes.mapValues { $0.color.opacity(0.8) }, notes.mapValues(\.letter))
+    }
+
     struct Layout {
         let whites: [Int]
         let whiteWidth: CGFloat
@@ -92,6 +97,29 @@ struct KeyboardView: View {
             let i = Int(p.x / whiteWidth)
             return whites.indices.contains(i) ? whites[i] : nil
         }
+    }
+}
+
+extension Hand {
+    /// Right hand blue, left hand green, everywhere in the app.
+    var color: Color { self == .right ? .blue : .green }
+    var letter: String { self == .right ? "D" : "G" }
+}
+
+/// "● Main droite  ● Main gauche" key for the colours.
+struct HandLegend: View {
+    var body: some View {
+        HStack(spacing: 12) {
+            ForEach(Hand.allCases) { hand in
+                Label {
+                    Text(hand == .right ? "Main droite (D)" : "Main gauche (G)")
+                } icon: {
+                    Circle().fill(hand.color).frame(width: 9, height: 9)
+                }
+            }
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
     }
 }
 

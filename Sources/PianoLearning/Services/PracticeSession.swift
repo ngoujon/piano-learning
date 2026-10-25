@@ -91,9 +91,22 @@ final class PracticeSession: ObservableObject {
     func startListening() {
         let mic = MicrophoneListener.shared
         mic.onFrame = { [weak self] frame in self?.handle(frame) }
-        mic.start()
-        MIDIInputService.shared.onNote = { [weak self] pitch, on in self?.handleMIDI(pitch, on: on) }
+        // In microphone mode the keyboard's keys only sound, they don't validate the step.
+        MIDIInputService.shared.onNote = { [weak self] pitch, on in
+            if MIDIInputService.shared.usesKeyboard { self?.handleMIDI(pitch, on: on) }
+        }
         isListening = true
+        inputModeChanged()
+    }
+
+    /// Starts the microphone only in microphone mode (USB mode doesn't need it).
+    func inputModeChanged() {
+        guard isListening else { return }
+        detectedNotes = []
+        detectedLabel = nil
+        cents = nil
+        prepareStep(requireOnset: true)
+        if MIDIInputService.shared.usesKeyboard { MicrophoneListener.shared.stop() } else { MicrophoneListener.shared.start() }
     }
 
     func stopListening() {
@@ -245,8 +258,8 @@ final class PracticeSession: ObservableObject {
     // MARK: - Input handling
 
     private func handle(_ frame: AnalysisFrame) {
-        // A plugged-in keyboard gives exact notes; the microphone would only hear its speakers.
-        guard !MIDIInputService.shared.isKeyboardConnected else { return }
+        // In USB mode the keyboard gives exact notes; the microphone would only hear its speakers.
+        guard !MIDIInputService.shared.usesKeyboard else { return }
         let verdict = matcher.process(frame)
         // Display what the microphone hears (piano notes only, not voices or noise).
         if verdict != .silence, matcher.isPianoTone {

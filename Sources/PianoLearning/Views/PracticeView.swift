@@ -73,6 +73,7 @@ struct PracticeView: View {
         .onChange(of: micSensitivity) { _, v in session.sensitivity = v }
         .onChange(of: ignoreOctave) { _, v in session.ignoreOctave = v }
         .onChange(of: pianoOnly) { _, v in session.pianoOnly = v }
+        .onChange(of: midi.mode) { _, _ in session.inputModeChanged() }
         .overlay { if session.finished { finishedOverlay } }
     }
 
@@ -105,6 +106,9 @@ struct PracticeView: View {
                 Toggle("« Écouter le morceau » : seulement la main travaillée", isOn: $playOnlyPracticedHands)
                 if pdfURL != nil { Toggle("Afficher la partition PDF", isOn: $showPDF) }
                 Divider()
+                Picker("Détection des notes", selection: Binding(get: { midi.mode }, set: { midi.mode = $0 })) {
+                    ForEach(MIDIInputService.InputMode.allCases) { Text($0 == .microphone ? "Au micro (son du piano)" : "Par le câble USB").tag($0) }
+                }
                 InputDevicePicker()
                 Text("Sensibilité du micro")
                 Picker("Sensibilité", selection: $micSensitivity) {
@@ -125,9 +129,12 @@ struct PracticeView: View {
 
     private var micIndicator: some View {
         HStack(spacing: 6) {
-            if midi.isKeyboardConnected {
-                Label("Clavier USB", systemImage: "pianokeys").foregroundStyle(.blue)
-                    .help("\(midi.sources.joined(separator: ", ")) : les touches sont lues par le câble, le micro n'est pas utilisé.")
+            InputModePicker()
+            if midi.usesKeyboard {
+                if midi.isKeyboardConnected {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.blue)
+                        .help("\(midi.sources.joined(separator: ", ")) : les touches sont lues par le câble, le micro n'est pas utilisé.")
+                }
             } else {
                 microphoneStatus
             }
@@ -219,7 +226,7 @@ struct PracticeView: View {
                         VStack(spacing: 2) {
                             Text(showNoteNames ? p.noteLabel : "?")
                                 .font(.system(size: step.pitches.count > 2 ? 34 : 48, weight: .bold, design: .rounded))
-                                .foregroundStyle(step.hands[p] == .left ? Color.green : Color.accentColor)
+                                .foregroundStyle((step.hands[p] ?? .right).color)
                             Text(step.hands[p] == .left ? "main gauche" : "main droite")
                                 .font(.caption2).foregroundStyle(.secondary)
                         }
@@ -344,10 +351,10 @@ struct PracticeView: View {
         var labels: [Int: String] = [:]
         if session.isPlayingPiece {
             // Keys light up as the piece plays.
-            for p in sound.activeNotes { highlights[p] = Color.accentColor.opacity(0.75) }
+            (highlights, labels) = KeyboardView.playing(sound.activeNotes)
         } else if let step = session.currentStep {
             for p in step.pitches {
-                highlights[p] = (step.hands[p] == .left ? Color.green : Color.accentColor).opacity(0.75)
+                highlights[p] = (step.hands[p] ?? .right).color.opacity(0.75)
                 if showNoteNames { labels[p] = p.noteLabel }
             }
         }
@@ -360,10 +367,13 @@ struct PracticeView: View {
         case .none: break
         }
         // Always the full 88 keys, like a real piano, so the keyboard never shifts under the notes.
-        return KeyboardView(highlights: highlights, labels: labels) { pitch in
-            session.keyPressed(pitch)
+        return VStack(spacing: 2) {
+            HandLegend().frame(maxWidth: .infinity, alignment: .trailing)
+            KeyboardView(highlights: highlights, labels: labels) { pitch in
+                session.keyPressed(pitch)
+            }
         }
-        .frame(height: 150)
+        .frame(height: 166)
         .padding(.horizontal, 6)
         .padding(.bottom, 6)
     }

@@ -10,8 +10,31 @@ final class MIDIInputService: ObservableObject {
     @Published private(set) var sources: [String] = []
     @Published private(set) var heldKeys: Set<Int> = []
 
-    /// A keyboard sends exact notes: the microphone is then not used to check what was played.
     var isKeyboardConnected: Bool { !sources.isEmpty }
+
+    /// How played notes are checked: the microphone listens to the piano, or the USB cable sends its keys.
+    enum InputMode: String, CaseIterable, Identifiable {
+        case microphone = "mic", keyboard = "usb"
+        var id: String { rawValue }
+        var label: String { self == .microphone ? "Micro" : "USB" }
+        var icon: String { self == .microphone ? "mic.fill" : "pianokeys" }
+    }
+
+    /// The user's choice; until they pick one, USB is used whenever a keyboard is plugged in.
+    @Published private var chosenMode = UserDefaults.standard.string(forKey: "inputMode").flatMap(InputMode.init)
+
+    var mode: InputMode {
+        get { chosenMode ?? (isKeyboardConnected ? .keyboard : .microphone) }
+        set {
+            chosenMode = newValue
+            UserDefaults.standard.set(newValue.rawValue, forKey: "inputMode")
+        }
+    }
+
+    /// In USB mode the keyboard sends exact notes: the microphone is not used to check what was played.
+    var usesKeyboard: Bool { mode == .keyboard }
+
+    func toggleMode() { mode = usesKeyboard ? .microphone : .keyboard }
 
     /// (pitch, isNoteOn)
     var onNote: ((Int, Bool) -> Void)?

@@ -55,12 +55,6 @@ struct StaffView: View {
             let colWidth = max(space * 3.2, (right - startX) / CGFloat(max(columns.count, 1)))
             for (i, col) in columns.enumerated() {
                 let x = startX + colWidth * (CGFloat(i) + 0.5)
-                let color: Color
-                switch col.state {
-                case .done: color = .green.opacity(0.75)
-                case .current: color = .accentColor
-                case .upcoming: color = .primary.opacity(0.8)
-                }
                 if col.state == .current {
                     let highlight = Path(roundedRect: CGRect(x: x - colWidth / 2 + 2, y: y(42), width: colWidth - 4, height: y(14) - y(42)),
                                          cornerSize: CGSize(width: 8, height: 8))
@@ -68,8 +62,15 @@ struct StaffView: View {
                 }
                 for pitch in col.pitches {
                     let (d, sharp) = Self.diatonic(pitch)
-                    let onTreble = (col.hands[pitch] ?? (pitch >= 60 ? .right : .left)) == .right
-                    let color = col.state == .current && !onTreble ? Color.green : color
+                    let hand = col.hands[pitch] ?? (pitch >= 60 ? .right : .left)
+                    let onTreble = hand == .right
+                    // Each note in its hand's colour; played notes fade to grey.
+                    let color: Color
+                    switch col.state {
+                    case .done: color = .secondary.opacity(0.6)
+                    case .current: color = hand.color
+                    case .upcoming: color = hand.color.opacity(0.55)
+                    }
                     drawLedgers(ctx: ctx, d: d, x: x, space: space, onTreble: onTreble, y: y)
                     let center = CGPoint(x: x, y: y(d))
                     let head = Path(ellipseIn: CGRect(x: center.x - space * 0.65, y: center.y - space * 0.45, width: space * 1.3, height: space * 0.9))

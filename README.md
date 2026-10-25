@@ -34,8 +34,9 @@ Get [`exports/Piano-Learning-1.1-macOS.zip`](exports/Piano-Learning-1.1-macOS.zi
   - **metronome** (M) with a swinging pendulum and beat lights: it uses the piece's time signature and tempo, follows the playback, and can be silent (visual only) so it never interrupts the microphone
   - "any octave" option, microphone sensitivity and microphone choice
   - the PDF score is shown next to the lesson
+  - right-hand notes are blue (D) and left-hand notes green (G), on the staff, the keyboard and while the piece plays
   - the on-screen keyboard always shows all 88 keys, like a real piano, so it never shifts while you play
-  - USB/Bluetooth MIDI keyboards (digital pianos such as the Alesis Recital) are supported, with exact detection: plug in the cable and the app reads the keys directly, the microphone is then ignored. The keys you play also sound on the Mac with its piano voice and your sustain pedal (Settings can turn this off)
+  - USB/Bluetooth MIDI keyboards (digital pianos such as the Alesis Recital) are supported, with exact detection: plug in the cable and the app reads the keys directly, the microphone is then ignored. A **Micro / USB** switch in the lesson and free play (⌘U) picks which one checks your notes. The keys you play also sound on the Mac with its piano voice and your sustain pedal (Settings can turn this off)
 - **Learn from a PDF alone**: optical music recognition with [Audiveris](https://audiveris.github.io), a free tool you can install from the app in one click. Results are reliable on simple scores and approximate on dense ones.
 - **Listen to a piece**: MIDI piano playback at 50/75/100 % speed, with the keys lighting up.
 - **Free play**: the microphone shows the note you're playing (with tuning) while you read a score.

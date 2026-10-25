@@ -10,7 +10,8 @@ final class SoundEngine: ObservableObject {
     static let shared = SoundEngine()
 
     @Published private(set) var isPlaying = false
-    @Published private(set) var activeNotes: Set<Int> = []
+    /// Notes of the score sounding right now, with the hand that plays each.
+    @Published private(set) var activeNotes: [Int: Hand] = [:]
     @Published private(set) var position: Double = 0
     @Published private(set) var duration: Double = 0
 
@@ -26,7 +27,7 @@ final class SoundEngine: ObservableObject {
     private var started = false
 
     private var timer: Timer?
-    private var events: [(time: Double, pitch: Int, on: Bool, velocity: Int)] = []
+    private var events: [(time: Double, pitch: Int, on: Bool, velocity: Int, hand: Hand)] = []
     private var nextEvent = 0
     private var playStart = Date()
     private var startOffset = 0.0
@@ -138,15 +139,16 @@ final class SoundEngine: ObservableObject {
         stop()
         ensureStarted()
         let handOf = PracticeSequence.handAssignment(for: score)
-        var evts: [(Double, Int, Bool, Int)] = []
+        var evts: [(Double, Int, Bool, Int, Hand)] = []
         for n in score.notes where hands == .both || (hands == .right) == (handOf(n) == .right) {
             guard n.end > start, n.start < (end ?? .infinity) else { continue }
-            evts.append((n.start, n.pitch, true, n.velocity))
-            evts.append((min(n.end, end ?? .infinity), n.pitch, false, 0))
+            let hand = handOf(n)
+            evts.append((n.start, n.pitch, true, n.velocity, hand))
+            evts.append((min(n.end, end ?? .infinity), n.pitch, false, 0, hand))
         }
         // Note-offs before note-ons at identical times so repeated notes re-trigger.
         events = evts.sorted { $0.0 != $1.0 ? $0.0 < $1.0 : (!$0.2 && $1.2) }
-            .map { (time: $0.0, pitch: $0.1, on: $0.2, velocity: $0.3) }
+            .map { (time: $0.0, pitch: $0.1, on: $0.2, velocity: $0.3, hand: $0.4) }
         nextEvent = events.firstIndex { $0.time >= start } ?? events.count
         duration = end ?? score.duration
         startOffset = start
@@ -168,10 +170,10 @@ final class SoundEngine: ObservableObject {
             let e = events[nextEvent]
             if e.on {
                 sampler.startNote(UInt8(e.pitch), withVelocity: UInt8(max(1, min(127, e.velocity))), onChannel: 0)
-                activeNotes.insert(e.pitch)
+                activeNotes[e.pitch] = e.hand
             } else {
                 sampler.stopNote(UInt8(e.pitch), onChannel: 0)
-                activeNotes.remove(e.pitch)
+                activeNotes[e.pitch] = nil
             }
             changed = true
             nextEvent += 1
@@ -183,10 +185,10 @@ final class SoundEngine: ObservableObject {
     func stop() {
         timer?.invalidate()
         timer = nil
-        for p in activeNotes { sampler.stopNote(UInt8(p), onChannel: 0) }
+        for p in activeNotes.keys { sampler.stopNote(UInt8(p), onChannel: 0) }
         // Send "all notes off" for safety.
         for ch in 0..<16 { sampler.sendController(123, withValue: 0, onChannel: UInt8(ch)) }
-        activeNotes = []
+        activeNotes = [:]
         isPlaying = false
         playingID = nil
     }

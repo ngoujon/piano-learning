@@ -133,8 +133,10 @@ struct PieceDetailView: View {
             if sound.isPlaying(id: piece.id.uuidString) {
                 VStack(spacing: 4) {
                     ProgressView(value: min(sound.position, sound.duration), total: max(sound.duration, 0.01))
-                    KeyboardView(highlights: Dictionary(uniqueKeysWithValues: sound.activeNotes.map { ($0, Color.accentColor) }), showCLabels: false)
+                    let lit = KeyboardView.playing(sound.activeNotes)
+                    KeyboardView(highlights: lit.highlights, labels: lit.labels, showCLabels: false)
                         .frame(height: 60)
+                    HandLegend()
                 }
             }
             if !piece.hasScore { missingScoreBanner }
@@ -260,7 +262,7 @@ struct ScoreOverview: View {
                     let x = CGFloat(n.start / score.duration) * size.width
                     let w = max(2, CGFloat(n.duration / score.duration) * size.width)
                     let y = size.height - CGFloat(n.pitch - lo + 1) * rowH
-                    let color: Color = handOf(n) == .right ? .blue : .green
+                    let color = handOf(n).color
                     ctx.fill(Path(roundedRect: CGRect(x: x, y: y, width: w, height: max(2, rowH - 1)), cornerSize: CGSize(width: 1, height: 1)),
                              with: .color(color.opacity(0.7)))
                 }
@@ -268,7 +270,10 @@ struct ScoreOverview: View {
             .frame(width: geo.size.width, height: geo.size.height)
         }
         .overlay(alignment: .topLeading) {
-            Text("Aperçu des notes (bleu : main droite, vert : main gauche)").font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: 12) {
+                Text("Aperçu des notes").font(.caption).foregroundStyle(.secondary)
+                HandLegend()
+            }
         }
     }
 }
