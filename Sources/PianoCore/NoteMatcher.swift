@@ -33,6 +33,15 @@ public struct NoteMatcher {
     private var wrongReported = false
     /// Notes of the previous step: their decaying sound must not count as a wrong note.
     private var previousExpected: Set<Int> = []
+    /// Chord notes must be struck within this many frames of each other (~40 ms per frame).
+    public var chordWindowFrames = 3
+    /// Keys of a chord must be pressed within this delay of each other (exact input).
+    public var chordWindowSeconds: TimeInterval = 0.15
+    private var frameIndex = 0
+    /// Recent loudness of each expected note, to tell a fresh strike from a ringing note.
+    private var levels: [Int: [Float]] = [:]
+    /// Frame at which each expected note was last struck during this step.
+    private var struckAt: [Int: Int] = [:]
 
     public init() {}
 
@@ -45,6 +54,7 @@ public struct NoteMatcher {
         wrongCandidate = nil
         wrongFrames = 0
         wrongReported = false
+        struckAt = [:]
     }
 
     public var gate: Float { max(0.004, noiseFloor * 3.0) * sensitivity }
@@ -75,8 +85,37 @@ public struct NoteMatcher {
         return false
     }
 
+    /// Absolute loudness estimate of a note (in any accepted octave). Uses the fundamental only:
+    /// the harmonics of a low note are boosted when higher notes of the chord are struck.
+    private func level(of note: Int, in frame: AnalysisFrame) -> Float {
+        let candidates = ignoreOctave
+            ? stride(from: note % 12 + 12, through: 108, by: 12).filter { NoteName.pianoRange.contains($0) }
+            : [note]
+        return frame.rms * (candidates.map { frame.fundamental(of: $0) }.max() ?? 0)
+    }
+
+    /// Records which chord notes were just struck: a note counts only when its own sound rises,
+    /// so a note still ringing from earlier is not taken as played together with a new one.
+    private mutating func trackStrikes(_ frame: AnalysisFrame) {
+        for note in expected {
+            let l = level(of: note, in: frame)
+            let history = levels[note] ?? []
+            if isPresent(note, in: frame), l >= (history.min() ?? 0) * 1.4 {
+                struckAt[note] = frameIndex
+            }
+            levels[note] = Array((history + [l]).suffix(4))
+        }    }
+
+    /// The chord notes were all struck at (almost) the same moment.
+    private var struckTogether: Bool {
+        guard expected.count > 1 else { return true }
+        let frames = expected.compactMap { struckAt[$0] }
+        guard frames.count == expected.count, let first = frames.min(), let last = frames.max() else { return false }
+        return last - first <= chordWindowFrames
+    }
+
     public mutating func process(_ frame: AnalysisFrame) -> Verdict {
-        defer { previousRMS = frame.rms }
+        defer { previousRMS = frame.rms; frameIndex += 1 }
         isPianoTone = toneFilter.process(frame) || !pianoOnly
 
         // Track the noise floor slowly upward, quickly downward.
@@ -91,6 +130,7 @@ public struct NoteMatcher {
             wrongCandidate = nil
             wrongFrames = 0
             wrongReported = false
+            levels = [:]
             // Silence after a note counts as a "release": the next strike is an onset.
             if frame.rms < gate * 0.7 { onsetSeen = true }
             isPianoTone = false
@@ -104,8 +144,9 @@ public struct NoteMatcher {
             return .listening
         }
 
+        if expected.count > 1 { trackStrikes(frame) }
         let allPresent = expected.allSatisfy { isPresent($0, in: frame) }
-        if allPresent && onsetSeen {
+        if allPresent && onsetSeen && struckTogether {
             hits += 1
             if hits >= requiredFrames { return .correct }
             return .listening
@@ -124,8 +165,16 @@ public struct NoteMatcher {
         return .listening
     }
 
-    /// Exact input (e.g. MIDI keyboard): returns true when the set of held keys covers the step.
-    public func matches(heldKeys: Set<Int>) -> Bool {
-        expected.allSatisfy { e in heldKeys.contains { same($0, e) } }
+    /// Exact input (e.g. MIDI keyboard): `pressedAt` gives, for each key held down, when it was pressed.
+    /// The step is played when its keys are all held and were pressed together (keys held since an
+    /// earlier step, or pressed one after the other, don't count).
+    public func matches(pressedAt: [Int: Date], since stepStart: Date) -> Bool {
+        var times: [Date] = []
+        for e in expected {
+            guard let t = pressedAt.filter({ same($0.key, e) && $0.value >= stepStart }).map(\.value).max() else { return false }
+            times.append(t)
+        }
+        guard let first = times.min(), let last = times.max() else { return false }
+        return last.timeIntervalSince(first) <= chordWindowSeconds
     }
 }

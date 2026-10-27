@@ -263,6 +263,20 @@ private func pianoTone(midi notes: [Int], sampleRate: Double = 48_000, count: In
         #expect(!wrong.contains(.correct))
     }
 
+    @Test func keyboardChordNeedsKeysPressedTogether() {
+        var m = NoteMatcher()
+        m.reset(expected: [60, 64])
+        let start = Date()
+        #expect(m.matches(pressedAt: [60: start + 0.10, 64: start + 0.15], since: start))
+        // One key, then the other half a second later.
+        #expect(!m.matches(pressedAt: [60: start + 0.1, 64: start + 0.6], since: start))
+        // A key held down since the previous step doesn't count.
+        #expect(!m.matches(pressedAt: [60: start - 0.05, 64: start + 0.05], since: start))
+        #expect(!m.matches(pressedAt: [60: start + 0.1], since: start))
+        m.reset(expected: [60])
+        #expect(m.matches(pressedAt: [60: start + 2], since: start))
+    }
+
     @Test func silenceHasNoPitch() {
         let noise = (0..<8192).map { _ in Float.random(in: -0.001...0.001) }
         let frame = analyzer.analyze(noise)

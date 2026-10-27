@@ -114,6 +114,53 @@ import Testing
         #expect(simulate(audio: audio, steps: steps).completed == steps.count)
     }
 
+    /// Renders notes struck at given times (seconds), each held for `hold` seconds.
+    func render(strikes: [(time: Double, pitch: Int)], hold: Double, sampleRate: Double = 48_000) throws -> [Float] {
+        let engine = AVAudioEngine()
+        let sampler = AVAudioUnitSampler()
+        engine.attach(sampler)
+        engine.connect(sampler, to: engine.mainMixerNode, format: nil)
+        let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1)!
+        try engine.enableManualRenderingMode(.offline, format: format, maximumFrameCount: 512)
+        try sampler.loadSoundBankInstrument(at: Self.dls, program: 0,
+                                            bankMSB: UInt8(kAUSampler_DefaultMelodicBankMSB), bankLSB: UInt8(kAUSampler_DefaultBankLSB))
+        try engine.start()
+        let buffer = AVAudioPCMBuffer(pcmFormat: engine.manualRenderingFormat, frameCapacity: 512)!
+        var out: [Float] = []
+        let total = Int(((strikes.map(\.time).max() ?? 0) + hold + 1.0) * sampleRate)
+        var started = Set<Int>(), stopped = Set<Int>()
+        var frame = 0
+        while frame < total {
+            let t = Double(frame) / sampleRate
+            for (i, s) in strikes.enumerated() {
+                if !started.contains(i), t >= s.time { sampler.startNote(UInt8(s.pitch), withVelocity: 80, onChannel: 0); started.insert(i) }
+                if !stopped.contains(i), t >= s.time + hold { sampler.stopNote(UInt8(s.pitch), onChannel: 0); stopped.insert(i) }
+            }
+            _ = try engine.renderOffline(512, to: buffer)
+            out.append(contentsOf: UnsafeBufferPointer(start: buffer.floatChannelData![0], count: Int(buffer.frameLength)))
+            frame += 512
+        }
+        engine.stop()
+        return out
+    }
+
+    /// (Chords whose upper notes are harmonics of the bass, like G2-D4-G4, can't be told apart by ear.)
+    @Test(arguments: [[48, 64], [60, 64], [43, 59, 65], [57, 60, 64]])
+    func chordNotesPlayedOneAfterTheOtherAreRejected(chord: [Int]) throws {
+        // Struck together (with a slight human spread): validated.
+        let together = try render(strikes: chord.enumerated().map { (0.3 + Double($0.offset) * 0.02, $0.element) }, hold: 1.5)
+        #expect(simulate(audio: together, steps: [chord]).completed == 1)
+
+        // One note, then the other while the first still rings: not validated.
+        let apart = try render(strikes: chord.enumerated().map { (0.3 + Double($0.offset) * 0.6, $0.element) }, hold: 2.5)
+        #expect(simulate(audio: apart, steps: [chord]).completed == 0)
+
+        // After that mistake, striking the chord again together is validated.
+        let retry = try render(strikes: chord.enumerated().map { (0.3 + Double($0.offset) * 0.6, $0.element) }
+                                   + chord.map { (0.3 + Double(chord.count) * 0.6 + 0.5, $0) }, hold: 1.0)
+        #expect(simulate(audio: retry, steps: [chord]).completed == 1)
+    }
+
     @Test func toleratesRoomNoise() throws {
         let steps = [67, 69, 71, 72, 74, 76].map { [$0] }
         let audio = try render(steps, interval: 0.6)

@@ -93,6 +93,7 @@ final class PracticeSession: ObservableObject {
         mic.onFrame = { [weak self] frame in self?.handle(frame) }
         // In microphone mode the keyboard's keys only sound, they don't validate the step.
         MIDIInputService.shared.onNote = { [weak self] pitch, on in
+            if !on { self?.pressedAt[pitch] = nil }
             if MIDIInputService.shared.usesKeyboard { self?.handleMIDI(pitch, on: on) }
         }
         isListening = true
@@ -200,6 +201,9 @@ final class PracticeSession: ObservableObject {
     }
 
     private var heldVirtual: Set<Int> = []
+    /// When each key currently down was pressed (a chord's keys must be pressed together).
+    private var pressedAt: [Int: Date] = [:]
+    private var stepStartedAt = Date()
 
     private func rebuild(keepPosition: Bool) {
         let oldTime = currentStep?.time ?? 0
@@ -219,6 +223,7 @@ final class PracticeSession: ObservableObject {
         matcher.pianoOnly = pianoOnly
         matcher.reset(expected: Set(currentStep?.pitches ?? []), requireOnset: requireOnset)
         heldVirtual.removeAll()
+        stepStartedAt = Date()
         if autoPlayTarget, currentStep != nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in self?.playTarget() }
         }
@@ -294,11 +299,12 @@ final class PracticeSession: ObservableObject {
     private func handleMIDI(_ pitch: Int, on: Bool) {
         guard on, !isPlayingPiece else { return }
         heldVirtual.insert(pitch)
+        pressedAt[pitch] = Date()
         detectedNotes = [pitch]
         detectedLabel = pitch.noteLabel
         guard !finished, let step = currentStep else { return }
         let held = MIDIInputService.shared.heldKeys.union(heldVirtual)
-        if matcher.matches(heldKeys: held) {
+        if matcher.matches(pressedAt: pressedAt.filter { held.contains($0.key) }, since: stepStartedAt) {
             advance(countAsCorrect: true)
         } else if !step.pitches.contains(where: { ignoreOctave ? ($0 - pitch) % 12 == 0 : $0 == pitch }) {
             wrongCount += 1
