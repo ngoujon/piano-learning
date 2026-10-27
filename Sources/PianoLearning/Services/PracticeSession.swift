@@ -31,6 +31,8 @@ final class PracticeSession: ObservableObject {
     }
     /// Plays each new target note automatically (helps beginners find it by ear).
     @Published var autoPlayTarget = false
+    /// Any wrong key sends the student back to the start of the loop (or of the piece).
+    @Published var errorFree = false
 
     @Published private(set) var steps: [PracticeStep] = []
     @Published private(set) var index = 0
@@ -144,6 +146,11 @@ final class PracticeSession: ObservableObject {
         prepareStep()
     }
 
+    /// Goes back to the first note of the loop (or of the piece when there is no loop).
+    func restartLoop() {
+        jump(to: loopRange?.lowerBound ?? 0)
+    }
+
     func skip() {
         advance(countAsCorrect: false)
     }
@@ -250,6 +257,15 @@ final class PracticeSession: ObservableObject {
         prepareStep()
     }
 
+    private func wrongNote(_ n: Int) {
+        wrongCount += 1
+        if errorFree {
+            restartLoop()
+            matcher.ignoreRinging(n)
+        }
+        showFeedback(.wrong(n))
+    }
+
     private func showFeedback(_ f: Feedback) {
         feedback = f
         feedbackTask?.cancel()
@@ -289,8 +305,7 @@ final class PracticeSession: ObservableObject {
         case .correct:
             advance(countAsCorrect: true)
         case .wrong(let n):
-            wrongCount += 1
-            showFeedback(.wrong(n))
+            wrongNote(n)
         case .silence, .listening:
             break
         }
@@ -307,8 +322,7 @@ final class PracticeSession: ObservableObject {
         if matcher.matches(pressedAt: pressedAt.filter { held.contains($0.key) }, since: stepStartedAt) {
             advance(countAsCorrect: true)
         } else if !step.pitches.contains(where: { ignoreOctave ? ($0 - pitch) % 12 == 0 : $0 == pitch }) {
-            wrongCount += 1
-            showFeedback(.wrong(pitch))
+            wrongNote(pitch)
         }
     }
 }

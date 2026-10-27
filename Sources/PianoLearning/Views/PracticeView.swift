@@ -19,6 +19,7 @@ struct PracticeView: View {
     @AppStorage("practiceTempo") private var tempo = 1.0
     @AppStorage("playOnlyPracticedHands") private var playOnlyPracticedHands = false
     @AppStorage("metronomeSound") private var metronomeSound = true
+    @AppStorage("errorFreeMode") private var errorFree = false
     let pdfURL: URL?
     let onClose: () -> Void
 
@@ -42,12 +43,14 @@ struct PracticeView: View {
             }
             Divider()
             controls
+            progressSlider
             keyboard
         }
         .onAppear {
             session.sensitivity = micSensitivity
             session.ignoreOctave = ignoreOctave
             session.pianoOnly = pianoOnly
+            session.errorFree = errorFree
             session.startListening()
             metronome.beatsPerBar = session.score.beats.first?.beatsInBar ?? 4
             metronome.bpm = baseBPM * tempo
@@ -73,6 +76,7 @@ struct PracticeView: View {
         .onChange(of: micSensitivity) { _, v in session.sensitivity = v }
         .onChange(of: ignoreOctave) { _, v in session.ignoreOctave = v }
         .onChange(of: pianoOnly) { _, v in session.pianoOnly = v }
+        .onChange(of: errorFree) { _, v in session.errorFree = v }
         .onChange(of: midi.mode) { _, _ in session.inputModeChanged() }
         .overlay { if session.finished { finishedOverlay } }
     }
@@ -99,6 +103,7 @@ struct PracticeView: View {
             Toggle("Mélodie seule", isOn: $session.options.melodyOnly)
                 .help("Ne garder que la note principale de chaque accord (recommandé pour débuter et pour la détection au micro)")
             Menu {
+                Toggle("Mode sans erreur (une fausse note ramène au début de la boucle)", isOn: $errorFree)
                 Toggle("Accepter n'importe quelle octave", isOn: $ignoreOctave)
                 Toggle("Ignorer la voix et les bruits", isOn: $pianoOnly)
                 Toggle("Jouer automatiquement chaque nouvelle note", isOn: $session.autoPlayTarget)
@@ -285,11 +290,14 @@ struct PracticeView: View {
                 .keyboardShortcut(.leftArrow, modifiers: [])
                 .help("Note précédente (←)")
             Button { session.playTarget() } label: { Label("Écouter la note", systemImage: "speaker.wave.2.fill") }
-                .keyboardShortcut(.space, modifiers: [])
-                .help("Faire entendre la note à jouer (espace). Le micro est mis en pause pendant ce temps.")
+                .keyboardShortcut("e", modifiers: [])
+                .help("Faire entendre la note à jouer (E). Le micro est mis en pause pendant ce temps.")
             Button { session.skip() } label: { Image(systemName: "forward.fill") }
                 .keyboardShortcut(.rightArrow, modifiers: [])
                 .help("Passer cette note (→)")
+            Button { session.restartLoop() } label: { Image(systemName: "backward.end.fill") }
+                .keyboardShortcut(.space, modifiers: [])
+                .help("Revenir au début de la boucle, ou du morceau s'il n'y a pas de boucle (espace)")
             Button { session.restart() } label: { Label("Recommencer", systemImage: "arrow.counterclockwise") }
 
             Divider().frame(height: 20)
@@ -319,11 +327,7 @@ struct PracticeView: View {
             .keyboardShortcut("m", modifiers: [])
             .help("Métronome avec balancier animé (M). Il bat la mesure du morceau.")
 
-            Slider(value: Binding(get: { Double(session.index) },
-                                  set: { session.jump(to: Int($0)) }),
-                   in: 0...Double(max(session.steps.count - 1, 1)))
-                .frame(minWidth: 160)
-
+            Spacer(minLength: 0)
             if let loop = session.loopRange {
                 Button { session.loopRange = nil; loopStart = nil } label: {
                     Label("Boucle \(loop.lowerBound + 1)–\(loop.upperBound + 1) ✕", systemImage: "repeat")
@@ -344,6 +348,16 @@ struct PracticeView: View {
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
+    }
+
+    /// Moves through the piece: on its own line, across the whole window.
+    private var progressSlider: some View {
+        Slider(value: Binding(get: { Double(session.index) },
+                              set: { session.jump(to: Int($0)) }),
+               in: 0...Double(max(session.steps.count - 1, 1)))
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal)
+            .padding(.bottom, 6)
     }
 
     private var keyboard: some View {

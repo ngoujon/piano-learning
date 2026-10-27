@@ -57,6 +57,11 @@ public struct NoteMatcher {
         struckAt = [:]
     }
 
+    /// A wrong note still ringing (e.g. after going back to the loop start) must not be reported again.
+    public mutating func ignoreRinging(_ note: Int) {
+        previousExpected.insert(note)
+    }
+
     public var gate: Float { max(0.004, noiseFloor * 3.0) * sensitivity }
 
     private func same(_ a: Int, _ b: Int) -> Bool {
